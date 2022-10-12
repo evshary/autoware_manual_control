@@ -13,11 +13,15 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(tier4_control_msgs)
 find_package(tier4_external_api_msgs)
+find_package(autoware_auto_control_msgs)
+find_package(autoware_auto_vehicle_msgs)
 
 add_executable(keyboard_control src/keyboard_control.cpp)
 ament_target_dependencies(keyboard_control rclcpp
                                            tier4_control_msgs
-                                           tier4_external_api_msgs)
+                                           tier4_external_api_msgs
+                                           autoware_auto_control_msgs
+                                           autoware_auto_vehicle_msgs)
 
 install(TARGETS
   keyboard_control
