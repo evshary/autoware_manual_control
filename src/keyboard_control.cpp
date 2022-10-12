@@ -24,6 +24,8 @@ class ManualControlNode : public rclcpp::Node
       // init variables
       external_ = false;
       gear_type_ = GearCommand::DRIVE;
+      acceleration_ = 0;
+      steering_tire_angle_ = 0;
 
       // init handler
       pub_gate_mode_ = this->create_publisher<GateMode>("/control/gate_mode_cmd", rclcpp::QoS(1));
@@ -58,14 +60,19 @@ class ManualControlNode : public rclcpp::Node
     {
       gear_type_ = type;
     }
+    void update_control_cmd(float acceleration, float angle)
+    {
+      acceleration_ = acceleration;
+      steering_tire_angle_ = angle;
+    }
   private:
     void publish_cmd()
     {
       AckermannControlCommand ackermann;
       {
-        ackermann.lateral.steering_tire_angle = 0;
+        ackermann.lateral.steering_tire_angle = steering_tire_angle_;
         ackermann.longitudinal.speed = 0;
-        ackermann.longitudinal.acceleration = 1;
+        ackermann.longitudinal.acceleration = acceleration_;
       }
       GearCommand gear_cmd;
       {
@@ -84,6 +91,8 @@ class ManualControlNode : public rclcpp::Node
 
     bool external_;
     uint8_t gear_type_;
+    float acceleration_;
+    float steering_tire_angle_;
 };
 
 class TerminalReader
@@ -94,7 +103,7 @@ class TerminalReader
       tcgetattr(STDIN_FILENO, &origin_settings_);
       // new terminal settings
       new_settings_ = origin_settings_;
-      new_settings_.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG); // Non-canonical mode
+      new_settings_.c_lflag &= ~(ICANON | ECHO | ECHOE); // Non-canonical mode
       new_settings_.c_cc[VTIME] = 0;    // No timeout_
       new_settings_.c_cc[VMIN] = 1;     // Return while reading 1 char
       // timeout_ value
@@ -136,6 +145,9 @@ int g_thread_state;  // 1 means running, 0 means stop
 void read_keyboard(std::shared_ptr<ManualControlNode> node)
 {
   TerminalReader t_reader;
+  float acceleration = 0;
+  float angle = 0;
+
   while (g_thread_state) {
     int ch = t_reader.read_key();
     if (ch != 0) {
@@ -147,7 +159,17 @@ void read_keyboard(std::shared_ptr<ManualControlNode> node)
         node->update_gear_cmd(GearCommand::REVERSE);
       } else if (ch == 'v') {
         node->update_gear_cmd(GearCommand::PARK);
+      } else if (ch == 'i') {
+        acceleration = std::clamp(acceleration + 0.1, 0.0, 1.0);
+      } else if (ch == 'j') {
+        angle = std::clamp(angle + 0.1, -22.5, 22.5);
+      } else if (ch == 'l') {
+        angle = std::clamp(angle - 0.1, -22.5, 22.5);
+      } else if (ch == 'k') {
+        acceleration = 0;
       }
+      std::cout << angle << " " << acceleration << std::endl;
+      node->update_control_cmd(acceleration, angle);
     }
   }
 }
