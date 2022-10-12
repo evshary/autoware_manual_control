@@ -1,7 +1,7 @@
 #include <iostream>
+#include <thread>
 #include <unistd.h>
 #include <termios.h>
-#include <pthread.h>
 #include <rclcpp/rclcpp.hpp>
 #include <tier4_control_msgs/msg/gate_mode.hpp>
 #include <tier4_external_api_msgs/srv/engage.hpp>
@@ -17,7 +17,7 @@ class ManualControlNode : public rclcpp::Node
       pub_gate_mode_ = this->create_publisher<GateMode>("/control/gate_mode_cmd", rclcpp::QoS(1));
       client_engage_ = this->create_client<EngageSrv>("/api/autoware/set/engage", rmw_qos_profile_services_default);
     }
-    void update_status()
+    void enable_manual_control()
     {
       // enable GateMode
       pub_gate_mode_->publish(tier4_control_msgs::build<GateMode>().data(GateMode::EXTERNAL));
@@ -28,7 +28,7 @@ class ManualControlNode : public rclcpp::Node
         RCLCPP_INFO(this->get_logger(), "client is unavailable");
         return;
       }
-      client_engage_->async_send_request(req, []([[maybe_unsed]] rclcpp::Client<EngageSrv>::SharedFuture result) {});
+      client_engage_->async_send_request(req);
     }
   private:
     rclcpp::Publisher<GateMode>::SharedPtr pub_gate_mode_;
@@ -82,16 +82,18 @@ class TerminalReader
 
 int g_thread_state;  // 1 means running, 0 means stop
 
-void* read_keyboard(void *data)
+void read_keyboard(std::shared_ptr<ManualControlNode> node)
 {
   TerminalReader t_reader;
   while (g_thread_state) {
     int ch = t_reader.read_key();
     if (ch != 0) {
       std::cout << ch << std::endl;
+      if (ch == 'z') {
+        node->enable_manual_control();
+      }
     }
   }
-  return NULL;
 }
 
 int main(int argc, char * argv[])
@@ -99,13 +101,12 @@ int main(int argc, char * argv[])
   rclcpp::init(argc, argv);
   auto node = std::make_shared<ManualControlNode>();
   // Run keyboard thread
-  pthread_t keyboard_thread;
   g_thread_state = 1;
-  pthread_create(&keyboard_thread, NULL, read_keyboard, NULL);
+  std::thread keyboard_thread(read_keyboard, node);
   rclcpp::spin(node);
   rclcpp::shutdown();
   // Stop keyboard thread
   g_thread_state = 0; 
-  pthread_join(keyboard_thread, NULL);
+  keyboard_thread.join();
   return 0;
 }
