@@ -94,7 +94,7 @@ class TerminalReader
       tcgetattr(STDIN_FILENO, &origin_settings_);
       // new terminal settings
       new_settings_ = origin_settings_;
-      new_settings_.c_lflag &= ~ICANON; // Non-canonical mode
+      new_settings_.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG); // Non-canonical mode
       new_settings_.c_cc[VTIME] = 0;    // No timeout_
       new_settings_.c_cc[VMIN] = 1;     // Return while reading 1 char
       // timeout_ value
