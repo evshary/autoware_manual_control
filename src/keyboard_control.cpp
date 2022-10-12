@@ -1,4 +1,5 @@
 #include <iostream>
+#include <unistd.h>
 #include <termios.h>
 #include <rclcpp/rclcpp.hpp>
 #include <tier4_control_msgs/msg/gate_mode.hpp>
@@ -32,10 +33,32 @@ class ManualControlNode : public rclcpp::Node
     rclcpp::Client<EngageSrv>::SharedPtr client_engage_;
 };
 
+class TerminalSettings
+{
+  public:
+    TerminalSettings() {
+      tcgetattr(STDIN_FILENO, &origin_settings);
+    }
+    void enable_read_keyboard() {
+      new_settings = origin_settings;
+      new_settings.c_lflag &= ~ICANON; // Non-canonical mode
+      new_settings.c_cc[VTIME] = 0;    // No timeout
+      new_settings.c_cc[VMIN] = 1;     // Return while reading 1 char
+      tcsetattr(STDIN_FILENO, TCSADRAIN, &new_settings);
+    }
+    void restore_terminal() {
+      tcsetattr(STDIN_FILENO, TCSADRAIN, &origin_settings);
+    }
+  private:
+    struct termios origin_settings;
+    struct termios new_settings;
+};
+
 int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<ManualControlNode>();
+  TerminalSettings t_settings;
   while (rclcpp::ok()) {
     try {
       node->update_status();
@@ -45,5 +68,6 @@ int main(int argc, char * argv[])
     }
   }
   rclcpp::shutdown();
+  t_settings.restore_terminal();
   return 0;
 }
