@@ -9,14 +9,24 @@
 #include <autoware_auto_control_msgs/msg/ackermann_control_command.hpp>
 #include <autoware_auto_vehicle_msgs/msg/gear_command.hpp>
 
+#include <autoware_auto_vehicle_msgs/msg/engage.hpp>
+#include "autoware_auto_vehicle_msgs/msg/velocity_report.hpp"
+#include <autoware_auto_vehicle_msgs/msg/gear_report.hpp>
+
 #define MAX_STEER_ANGLE 0.3925 // 22.5 * (PI / 180)
 
 using namespace std::chrono_literals;
+using std::placeholders::_1;
 
 using tier4_control_msgs::msg::GateMode;
 using EngageSrv = tier4_external_api_msgs::srv::Engage;
 using autoware_auto_control_msgs::msg::AckermannControlCommand;
 using autoware_auto_vehicle_msgs::msg::GearCommand;
+
+using autoware_auto_vehicle_msgs::msg::Engage;
+using autoware_auto_vehicle_msgs::msg::VelocityReport;
+using autoware_auto_vehicle_msgs::msg::GearReport;
+
 
 class ManualControlNode : public rclcpp::Node
 {
@@ -24,26 +34,37 @@ class ManualControlNode : public rclcpp::Node
     ManualControlNode(): Node("ManualControl")
     {
       // init variables
-      external_ = false;
       gear_type_ = GearCommand::DRIVE;
       acceleration_ = 0;
       steering_tire_angle_ = 0;
 
       // init handler
-      pub_gate_mode_ = this->create_publisher<GateMode>("/control/gate_mode_cmd", rclcpp::QoS(1));
-      client_engage_ = this->create_client<EngageSrv>("/api/autoware/set/engage", rmw_qos_profile_services_default);
-      pub_control_command_ = this->create_publisher<AckermannControlCommand>("/external/selected/control_cmd", rclcpp::QoS(1));
-      pub_gear_cmd_ = this->create_publisher<GearCommand>("/external/selected/gear_cmd", 1);
+      pub_gate_mode_ = this->create_publisher<GateMode>(
+        "/control/gate_mode_cmd", rclcpp::QoS(1));
+      client_engage_ = this->create_client<EngageSrv>(
+        "/api/autoware/set/engage", rmw_qos_profile_services_default);
+      pub_control_command_ = this->create_publisher<AckermannControlCommand>(
+        "/external/selected/control_cmd", rclcpp::QoS(1));
+      pub_gear_cmd_ = this->create_publisher<GearCommand>(
+        "/external/selected/gear_cmd", 1);
 
+      sub_gate_mode_ = this->create_subscription<GateMode>(
+        "/control/current_gate_mode", 10, std::bind(&ManualControlNode::onGateMode, this, _1));
+      sub_engage_ = this->create_subscription<Engage>(
+        "/api/autoware/get/engage", 10, std::bind(&ManualControlNode::onEngageStatus, this, _1));
+      sub_velocity_ = this->create_subscription<VelocityReport>(
+        "/vehicle/status/velocity_status", 1, std::bind(&ManualControlNode::onVelocity, this, _1));
+      sub_gear_ = this->create_subscription<GearReport>(
+        "/vehicle/status/gear_status", 10, std::bind(&ManualControlNode::onGear, this, _1));
+      
       // 30 Hz
       timer_ = this->create_wall_timer(33ms, std::bind(&ManualControlNode::publish_cmd, this));
     }
     void toggle_manual_control()
     {
-      if (external_) {
+      if (gate_mode_ == GateMode::EXTERNAL) {
         // Set GateMode to auto
         pub_gate_mode_->publish(tier4_control_msgs::build<GateMode>().data(GateMode::AUTO));
-        external_ = false;
       } else {
         // Set GateMode to external
         pub_gate_mode_->publish(tier4_control_msgs::build<GateMode>().data(GateMode::EXTERNAL));
@@ -55,19 +76,69 @@ class ManualControlNode : public rclcpp::Node
           return;
         }
         client_engage_->async_send_request(req);
-        external_ = true;
       }
     }
     void update_gear_cmd(uint8_t type)
     {
       gear_type_ = type;
     }
-    void update_control_cmd(float acceleration, float angle)
+    void update_control_cmd(double acceleration, double angle)
     {
       acceleration_ = acceleration;
       steering_tire_angle_ = angle;
     }
+    void print_status()
+    {
+      std::cout << "Engage:";
+      if (current_engage_) {
+        std::cout << "Ready";
+      } else {
+        std::cout << "Not Ready";
+      }
+      std::cout << "\t";
+      std::cout << "Gate Mode:";
+      switch (gate_mode_) {
+        case GateMode::AUTO:
+          std::cout << "Auto";
+          break;
+        case GateMode::EXTERNAL:
+          std::cout << "External";
+          break;
+        default:
+          std::cout << "Unknown";
+          break;
+      }
+      std::cout << "\t";
+      std::cout << "Gear:";
+      switch (gear_type_) {
+        case GearReport::PARK:
+          std::cout << "P";
+          break;
+        case GearReport::REVERSE:
+          std::cout << "R";
+          break;
+        case GearReport::DRIVE:
+          std::cout << "D";
+          break;
+        case GearReport::LOW:
+          std::cout << "L";
+          break;
+      }
+      std::cout << std::endl;
+    }
   private:
+    void onGateMode(const GateMode::ConstSharedPtr msg) {
+      gate_mode_ = msg->data;
+    }
+    void onEngageStatus(const Engage::ConstSharedPtr msg) {
+      current_engage_ = msg->engage;
+    }
+    void onVelocity(const VelocityReport::ConstSharedPtr msg) {
+      current_velocity_ = msg->longitudinal_velocity;
+    }
+    void onGear(const GearReport::ConstSharedPtr msg) {
+      current_gear_type_ = msg->report;
+    }
     void publish_cmd()
     {
       AckermannControlCommand ackermann;
@@ -89,12 +160,21 @@ class ManualControlNode : public rclcpp::Node
     rclcpp::Publisher<AckermannControlCommand>::SharedPtr pub_control_command_;
     rclcpp::Publisher<GearCommand>::SharedPtr pub_gear_cmd_;
 
+    rclcpp::Subscription<GateMode>::SharedPtr sub_gate_mode_;
+    rclcpp::Subscription<Engage>::SharedPtr sub_engage_;
+    rclcpp::Subscription<VelocityReport>::SharedPtr sub_velocity_;
+    rclcpp::Subscription<GearReport>::SharedPtr sub_gear_;
+
     rclcpp::TimerBase::SharedPtr timer_;
 
-    bool external_;
     uint8_t gear_type_;
-    float acceleration_;
-    float steering_tire_angle_;
+    double acceleration_;
+    double steering_tire_angle_;
+    // status
+    uint8_t gate_mode_;
+    bool current_engage_;
+    uint8_t current_gear_type_;
+    double current_velocity_;
 };
 
 class TerminalReader
@@ -161,17 +241,23 @@ void read_keyboard(std::shared_ptr<ManualControlNode> node)
         node->update_gear_cmd(GearCommand::REVERSE);
       } else if (ch == 'v') {
         node->update_gear_cmd(GearCommand::PARK);
-      } else if (ch == 'i') {
-        acceleration = std::clamp(acceleration + 0.1, 0.0, 1.0);
-      } else if (ch == 'j') {
-        angle = std::clamp(angle + 0.02, -MAX_STEER_ANGLE, MAX_STEER_ANGLE);
-      } else if (ch == 'l') {
-        angle = std::clamp(angle - 0.02, -MAX_STEER_ANGLE, MAX_STEER_ANGLE);
-      } else if (ch == 'k') {
-        angle = 0;
+      } else if (ch == 's') {
+        node->print_status();
+      } else {
+        if (ch == 'i') {
+          acceleration = std::clamp(acceleration + 0.1, 0.0, 1.0);
+        } else if (ch == 'j') {
+          angle = std::clamp(angle + 0.02, -MAX_STEER_ANGLE, MAX_STEER_ANGLE);
+        } else if (ch == 'l') {
+          angle = std::clamp(angle - 0.02, -MAX_STEER_ANGLE, MAX_STEER_ANGLE);
+        } else if (ch == 'k') {
+          angle = 0;
+        } else {
+          continue;
+        }
+        std::cout << "angle:" << angle * 180 / M_PI << "\tacceleration:" << acceleration << std::endl;
+        node->update_control_cmd(acceleration, angle);
       }
-      std::cout << "angle:" << angle * 180 / M_PI << "\tacceleration:" << acceleration << std::endl;
-      node->update_control_cmd(acceleration, angle);
     }
   }
 }
