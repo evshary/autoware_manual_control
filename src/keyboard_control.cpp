@@ -13,7 +13,10 @@
 #include "autoware_auto_vehicle_msgs/msg/velocity_report.hpp"
 #include <autoware_auto_vehicle_msgs/msg/gear_report.hpp>
 
-#define MAX_STEER_ANGLE 0.3925 // 22.5 * (PI / 180)
+#define MAX_STEER_ANGLE  0.3925 // 22.5 * (PI / 180)
+#define STEP_STEER_ANGLE 0.0174 // 1 * (PI / 180)
+#define MAX_SPEED        27.78  // 100 km/hr = 27.78 m/s
+#define STEP_SPEED       1.389  // 5 km/hr = 1.389 m/s
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
@@ -35,8 +38,8 @@ class ManualControlNode : public rclcpp::Node
     {
       // init variables
       gear_type_ = GearCommand::DRIVE;
-      acceleration_ = 0;
       steering_tire_angle_ = 0;
+      target_velocity_ = 0;
 
       // init handler
       pub_gate_mode_ = this->create_publisher<GateMode>(
@@ -82,9 +85,9 @@ class ManualControlNode : public rclcpp::Node
     {
       gear_type_ = type;
     }
-    void update_control_cmd(double acceleration, double angle)
+    void update_control_cmd(double velocity, double angle)
     {
-      acceleration_ = acceleration;
+      target_velocity_ = velocity;
       steering_tire_angle_ = angle;
     }
     void print_status()
@@ -145,7 +148,8 @@ class ManualControlNode : public rclcpp::Node
       {
         ackermann.lateral.steering_tire_angle = steering_tire_angle_;
         ackermann.longitudinal.speed = 0;
-        ackermann.longitudinal.acceleration = acceleration_;
+        double acceleration = std::clamp((target_velocity_ - current_velocity_) * 0.5, -1.0, 1.0);
+        ackermann.longitudinal.acceleration = acceleration;
       }
       GearCommand gear_cmd;
       {
@@ -168,8 +172,8 @@ class ManualControlNode : public rclcpp::Node
     rclcpp::TimerBase::SharedPtr timer_;
 
     uint8_t gear_type_;
-    double acceleration_;
     double steering_tire_angle_;
+    double target_velocity_;
     // status
     uint8_t gate_mode_;
     bool current_engage_;
@@ -227,8 +231,8 @@ int g_thread_state;  // 1 means running, 0 means stop
 void read_keyboard(std::shared_ptr<ManualControlNode> node)
 {
   TerminalReader t_reader;
-  float acceleration = 0;
-  float angle = 0;
+  double velocity = 0;  // m/s
+  double angle = 0;     // radian
 
   while (g_thread_state) {
     int ch = t_reader.read_key();
@@ -244,19 +248,23 @@ void read_keyboard(std::shared_ptr<ManualControlNode> node)
       } else if (ch == 's') {
         node->print_status();
       } else {
-        if (ch == 'i') {
-          acceleration = std::clamp(acceleration + 0.1, 0.0, 1.0);
+        if (ch == 'u') {
+          velocity = std::clamp(velocity + STEP_SPEED, 0.0, MAX_SPEED);
+        } else if (ch == 'o') {
+          velocity = std::clamp(velocity - STEP_SPEED, 0.0, MAX_SPEED);
+        } else if (ch == 'i') {
+          velocity = 0.0;
         } else if (ch == 'j') {
-          angle = std::clamp(angle + 0.02, -MAX_STEER_ANGLE, MAX_STEER_ANGLE);
+          angle = std::clamp(angle + STEP_STEER_ANGLE, -MAX_STEER_ANGLE, MAX_STEER_ANGLE);
         } else if (ch == 'l') {
-          angle = std::clamp(angle - 0.02, -MAX_STEER_ANGLE, MAX_STEER_ANGLE);
+          angle = std::clamp(angle - STEP_STEER_ANGLE, -MAX_STEER_ANGLE, MAX_STEER_ANGLE);
         } else if (ch == 'k') {
           angle = 0;
         } else {
           continue;
         }
-        std::cout << "angle:" << angle * 180 / M_PI << "\tacceleration:" << acceleration << std::endl;
-        node->update_control_cmd(acceleration, angle);
+        std::cout << "angle(deg):" << angle * 180 / M_PI << "\tvelocity(km/hr):" << velocity * 3600 / 1000 << std::endl;
+        node->update_control_cmd(velocity, angle);
       }
     }
   }
