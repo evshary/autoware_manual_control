@@ -30,7 +30,7 @@ ros2 run autoware_manual_control keyboard_control
 3. Adjust speed and steering angle
 4. Enjoy driving :-)
 
-```shell
+```
 ------------------------------------
 | Different Mode:                  |
 |   z: Toggle auto & external mode |
