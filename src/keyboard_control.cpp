@@ -10,6 +10,26 @@
 #define MAX_SPEED        27.78  // 100 km/hr = 27.78 m/s
 #define STEP_SPEED       1.389  // 5 km/hr = 1.389 m/s
 
+void print_help()
+{
+  std::cout << "------------------------------------" << std::endl;
+  std::cout << "| Different Mode:                  |" << std::endl;
+  std::cout << "|   z: Toggle auto & external mode |" << std::endl;
+  std::cout << "|   x: GateMode => Drive           |" << std::endl;
+  std::cout << "|   c: GateMode => Reverse         |" << std::endl;
+  std::cout << "|   v: GateMode => Park            |" << std::endl;
+  std::cout << "|   s: View current mode           |" << std::endl;
+  std::cout << "| Speed:                           |" << std::endl;
+  std::cout << "|   u: Increase speed              |" << std::endl;
+  std::cout << "|   i: Set speed to 0              |" << std::endl;
+  std::cout << "|   o: Decrease speed              |" << std::endl;
+  std::cout << "| Steering Angle                   |" << std::endl;
+  std::cout << "|   j: Left turn                   |" << std::endl;
+  std::cout << "|   k: Set angle to 0              |" << std::endl;
+  std::cout << "|   l: Right turn                  |" << std::endl;
+  std::cout << "------------------------------------" << std::endl;
+}
+
 int g_thread_state;  // 1 means running, 0 means stop
 
 void read_keyboard(std::shared_ptr<ManualControlNode> node)
@@ -18,6 +38,7 @@ void read_keyboard(std::shared_ptr<ManualControlNode> node)
   double velocity = 0;  // m/s
   double angle = 0;     // radian
 
+  print_help();
   while (g_thread_state) {
     int ch = t_reader.read_key();
     if (ch != 0) {
@@ -45,6 +66,7 @@ void read_keyboard(std::shared_ptr<ManualControlNode> node)
         } else if (ch == 'k') {
           angle = 0;
         } else {
+          print_help();
           continue;
         }
         std::cout << "angle(deg):" << angle * 180 / M_PI << "\tvelocity(km/hr):" << velocity * 3600 / 1000 << std::endl;
