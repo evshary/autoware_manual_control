@@ -9,6 +9,8 @@
 #include <autoware_auto_control_msgs/msg/ackermann_control_command.hpp>
 #include <autoware_auto_vehicle_msgs/msg/gear_command.hpp>
 
+#define MAX_STEER_ANGLE 0.3925 // 22.5 * (PI / 180)
+
 using namespace std::chrono_literals;
 
 using tier4_control_msgs::msg::GateMode;
@@ -162,13 +164,13 @@ void read_keyboard(std::shared_ptr<ManualControlNode> node)
       } else if (ch == 'i') {
         acceleration = std::clamp(acceleration + 0.1, 0.0, 1.0);
       } else if (ch == 'j') {
-        angle = std::clamp(angle + 0.1, -22.5, 22.5);
+        angle = std::clamp(angle + 0.02, -MAX_STEER_ANGLE, MAX_STEER_ANGLE);
       } else if (ch == 'l') {
-        angle = std::clamp(angle - 0.1, -22.5, 22.5);
+        angle = std::clamp(angle - 0.02, -MAX_STEER_ANGLE, MAX_STEER_ANGLE);
       } else if (ch == 'k') {
-        acceleration = 0;
+        angle = 0;
       }
-      std::cout << angle << " " << acceleration << std::endl;
+      std::cout << "angle:" << angle * 180 / M_PI << "\tacceleration:" << acceleration << std::endl;
       node->update_control_cmd(acceleration, angle);
     }
   }
