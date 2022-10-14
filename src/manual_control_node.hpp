@@ -1,3 +1,6 @@
+#ifndef _MANUAL_CONTROL_NODE_HPP_
+#define _MANUAL_CONTROL_NODE_HPP_
+
 #include <string>
 
 #include <rclcpp/rclcpp.hpp>
@@ -166,3 +169,5 @@ class ManualControlNode : public rclcpp::Node
     uint8_t current_gear_type_;
     double current_velocity_;
 };
+
+#endif /*_MANUAL_CONTROL_NODE_HPP_*/

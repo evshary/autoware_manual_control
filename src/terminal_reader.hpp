@@ -1,3 +1,6 @@
+#ifndef _TERMINAL_READER_HPP_
+#define _TERMINAL_READER_HPP_
+
 #include <unistd.h>
 #include <termios.h>
 
@@ -45,3 +48,5 @@ class TerminalReader
     struct termios new_settings_;
     struct timeval timeout_;
 };
+
+#endif /*_TERMINAL_READER_HPP_*/
