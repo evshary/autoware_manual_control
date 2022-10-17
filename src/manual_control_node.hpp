@@ -58,8 +58,9 @@ class ManualControlNode : public rclcpp::Node
       // 30 Hz
       timer_ = this->create_wall_timer(33ms, std::bind(&ManualControlNode::publish_cmd, this));
     }
-    void toggle_manual_control()
+    bool toggle_manual_control()
     {
+      bool switch_to_external = (gate_mode_ != GateMode::EXTERNAL);
       if (gate_mode_ == GateMode::EXTERNAL) {
         // Set GateMode to auto
         pub_gate_mode_->publish(tier4_control_msgs::build<GateMode>().data(GateMode::AUTO));
@@ -71,10 +72,11 @@ class ManualControlNode : public rclcpp::Node
         req->engage = true;
         if (!client_engage_->service_is_ready()) {
           RCLCPP_INFO(this->get_logger(), "client is unavailable");
-          return;
+          return false;
         }
         client_engage_->async_send_request(req);
       }
+      return switch_to_external;
     }
     void update_gear_cmd(uint8_t type)
     {

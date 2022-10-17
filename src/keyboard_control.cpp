@@ -1,5 +1,6 @@
 #include <iostream>
 #include <thread>
+#include <string>
 
 #include <rclcpp/rclcpp.hpp>
 #include "manual_control_node.hpp"
@@ -43,13 +44,17 @@ void read_keyboard(std::shared_ptr<ManualControlNode> node)
     int ch = t_reader.read_key();
     if (ch != 0) {
       if (ch == 'z') {
-        node->toggle_manual_control();
+        std::string new_mode = (node->toggle_manual_control())? "EXTERNAL":"AUTO";
+        std::cout << "Toggle to " << new_mode << std::endl;
       } else if (ch == 'x') {
         node->update_gear_cmd(GearCommand::DRIVE);
+        std::cout << "Switch to DRIVE mode" << std::endl;
       } else if (ch == 'c') {
         node->update_gear_cmd(GearCommand::REVERSE);
+        std::cout << "Switch to REVERSE mode" << std::endl;
       } else if (ch == 'v') {
         node->update_gear_cmd(GearCommand::PARK);
+        std::cout << "Switch to PARK mode" << std::endl;
       } else if (ch == 's') {
         std::cout << node->get_status() << std::endl;
       } else {
