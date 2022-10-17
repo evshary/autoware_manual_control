@@ -39,6 +39,7 @@ void read_keyboard(std::shared_ptr<ManualControlNode> node)
   double velocity = 0;  // m/s
   double angle = 0;     // radian
 
+  t_reader.configure_termnial();
   print_help();
   while (g_thread_state) {
     int ch = t_reader.read_key();
@@ -79,6 +80,7 @@ void read_keyboard(std::shared_ptr<ManualControlNode> node)
       }
     }
   }
+  t_reader.restore_terminal();
 }
 
 int main(int argc, char * argv[])

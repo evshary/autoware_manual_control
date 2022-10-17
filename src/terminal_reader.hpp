@@ -31,7 +31,6 @@ class TerminalReader
     {
       int ch = 0;
 
-      configure_termnial();
       fd_set fds;
       FD_ZERO(&fds);
       FD_SET(STDIN_FILENO, &fds);
@@ -39,7 +38,6 @@ class TerminalReader
       if (FD_ISSET(STDIN_FILENO, &fds)) {
         ch = getchar();
       }
-      restore_terminal();
 
       return ch;
     }
