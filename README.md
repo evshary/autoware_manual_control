@@ -2,7 +2,9 @@
 
 Keyboard controller for Autoware.
 
-# Build & Run
+# Build
+
+## Native Host
 
 * Source ROS and Autoware.universe workspace first.
 
@@ -16,14 +18,7 @@ cd ..
 colcon build
 ```
 
-* Run
-
-```shell
-source install/local_setup.bash
-ros2 run autoware_manual_control keyboard_control
-```
-
-# Build in docker with latest Autoware
+## docker with latest Autoware
 
 * Get the code
 
@@ -44,7 +39,7 @@ cd $HOME/autoware_manual_control_ws
 colcon build
 ```
 
-* Run 
+# Run
 
 ```shell
 source install/local_setup.bash
