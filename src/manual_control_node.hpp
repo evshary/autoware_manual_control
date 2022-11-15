@@ -139,8 +139,11 @@ class ManualControlNode : public rclcpp::Node
       {
         ackermann.stamp = this->get_clock()->now();
         ackermann.lateral.steering_tire_angle = steering_tire_angle_;
-        ackermann.longitudinal.speed = target_velocity_;
-        double acceleration = std::clamp((target_velocity_ - current_velocity_) * 0.5, -1.0, 1.0);
+        // The velocity is negative while reverse, so we should check the gear_type_.
+        double real_target_velocity_ = target_velocity_ * ((gear_type_ == GearReport::REVERSE)?-1:1);
+        ackermann.longitudinal.speed = real_target_velocity_;
+        // Note: acceleration does not related to gear_type_, so we should use abs value. 
+        double acceleration = std::clamp((target_velocity_ - std::abs(current_velocity_)) * 0.5, -1.0, 1.0);
         ackermann.longitudinal.acceleration = acceleration;
       }
       GearCommand gear_cmd;
