@@ -23,6 +23,34 @@ source install/local_setup.bash
 ros2 run autoware_manual_control keyboard_control
 ```
 
+# Build in docker with latest Autoware
+
+* Get the code
+
+```shell
+mkdir -p $HOME/autoware_manual_control_ws/src
+cd $HOME/autoware_manual_control_ws/src
+git clone https://github.com/evshary/autoware_manual_control.git
+cd ..
+```
+
+* Run the latest docker and build
+
+```shell
+# Run docker
+rocker --network host --privileged --x11 --user --volume $HOME/autoware_manual_control_ws --volume $HOME/autoware_map -- ghcr.io/autowarefoundation/autoware-universe:galactic-latest-prebuilt-amd64 bash
+# Build
+cd $HOME/autoware_manual_control_ws
+colcon build
+```
+
+* Run 
+
+```shell
+source install/local_setup.bash
+ros2 run autoware_manual_control keyboard_control
+```
+
 # Usage
 
 1. Toggle to external mode
