@@ -137,8 +137,9 @@ class ManualControlNode : public rclcpp::Node
     {
       AckermannControlCommand ackermann;
       {
+        ackermann.stamp = this->get_clock()->now();
         ackermann.lateral.steering_tire_angle = steering_tire_angle_;
-        ackermann.longitudinal.speed = 0;
+        ackermann.longitudinal.speed = target_velocity_;
         double acceleration = std::clamp((target_velocity_ - current_velocity_) * 0.5, -1.0, 1.0);
         ackermann.longitudinal.acceleration = acceleration;
       }
