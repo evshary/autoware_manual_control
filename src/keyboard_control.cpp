@@ -16,9 +16,9 @@ void print_help()
   std::cout << "------------------------------------" << std::endl;
   std::cout << "| Different Mode:                  |" << std::endl;
   std::cout << "|   z: Toggle auto & external mode |" << std::endl;
-  std::cout << "|   x: GateMode => Drive           |" << std::endl;
-  std::cout << "|   c: GateMode => Reverse         |" << std::endl;
-  std::cout << "|   v: GateMode => Park            |" << std::endl;
+  std::cout << "|   x: Gear Type => Drive          |" << std::endl;
+  std::cout << "|   c: Gear Type => Reverse        |" << std::endl;
+  std::cout << "|   v: Gear Type => Park           |" << std::endl;
   std::cout << "|   s: View current mode           |" << std::endl;
   std::cout << "| Speed:                           |" << std::endl;
   std::cout << "|   u: Increase speed              |" << std::endl;
