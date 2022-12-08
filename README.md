@@ -49,7 +49,7 @@ ros2 run autoware_manual_control keyboard_control
 # Usage
 
 1. Toggle to external mode
-2. Set GateMode to Drive
+2. Set Gear Type to Drive
 3. Adjust speed and steering angle
 4. Enjoy driving :-)
 
@@ -57,9 +57,9 @@ ros2 run autoware_manual_control keyboard_control
 ------------------------------------
 | Different Mode:                  |
 |   z: Toggle auto & external mode |
-|   x: GateMode => Drive           |
-|   c: GateMode => Reverse         |
-|   v: GateMode => Park            |
+|   x: Gear Type => Drive          |
+|   c: Gear Type => Reverse        |
+|   v: Gear Type => Park           |
 |   s: View current mode           |
 | Speed:                           |
 |   u: Increase speed              |
