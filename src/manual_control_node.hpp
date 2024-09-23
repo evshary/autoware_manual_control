@@ -6,24 +6,24 @@
 #include <rclcpp/rclcpp.hpp>
 #include <tier4_control_msgs/msg/gate_mode.hpp>
 #include <tier4_external_api_msgs/srv/engage.hpp>
-#include <autoware_auto_control_msgs/msg/ackermann_control_command.hpp>
-#include <autoware_auto_vehicle_msgs/msg/gear_command.hpp>
+#include <autoware_control_msgs/msg/control.hpp>
+#include <autoware_vehicle_msgs/msg/gear_command.hpp>
 
-#include <autoware_auto_vehicle_msgs/msg/engage.hpp>
-#include <autoware_auto_vehicle_msgs/msg/velocity_report.hpp>
-#include <autoware_auto_vehicle_msgs/msg/gear_report.hpp>
+#include <autoware_vehicle_msgs/msg/engage.hpp>
+#include <autoware_vehicle_msgs/msg/velocity_report.hpp>
+#include <autoware_vehicle_msgs/msg/gear_report.hpp>
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
 
 using tier4_control_msgs::msg::GateMode;
 using EngageSrv = tier4_external_api_msgs::srv::Engage;
-using autoware_auto_control_msgs::msg::AckermannControlCommand;
-using autoware_auto_vehicle_msgs::msg::GearCommand;
+using autoware_control_msgs::msg::Control;
+using autoware_vehicle_msgs::msg::GearCommand;
 
-using autoware_auto_vehicle_msgs::msg::Engage;
-using autoware_auto_vehicle_msgs::msg::VelocityReport;
-using autoware_auto_vehicle_msgs::msg::GearReport;
+using autoware_vehicle_msgs::msg::Engage;
+using autoware_vehicle_msgs::msg::VelocityReport;
+using autoware_vehicle_msgs::msg::GearReport;
 
 
 class ManualControlNode : public rclcpp::Node
@@ -41,7 +41,7 @@ class ManualControlNode : public rclcpp::Node
         "/control/gate_mode_cmd", rclcpp::QoS(1));
       client_engage_ = this->create_client<EngageSrv>(
         "/api/autoware/set/engage", rmw_qos_profile_services_default);
-      pub_control_command_ = this->create_publisher<AckermannControlCommand>(
+      pub_control_command_ = this->create_publisher<Control>(
         "/external/selected/control_cmd", rclcpp::QoS(1));
       pub_gear_cmd_ = this->create_publisher<GearCommand>(
         "/external/selected/gear_cmd", 1);
@@ -135,13 +135,13 @@ class ManualControlNode : public rclcpp::Node
     }
     void publish_cmd()
     {
-      AckermannControlCommand ackermann;
+      Control ackermann;
       {
         ackermann.stamp = this->get_clock()->now();
         ackermann.lateral.steering_tire_angle = steering_tire_angle_;
         // The velocity is negative while reverse, so we should check the gear_type_.
         double real_target_velocity_ = target_velocity_ * ((gear_type_ == GearReport::REVERSE)?-1:1);
-        ackermann.longitudinal.speed = real_target_velocity_;
+        ackermann.longitudinal.velocity = real_target_velocity_;
         // Note: acceleration does not related to gear_type_, so we should use abs value. 
         double acceleration = std::clamp((target_velocity_ - std::abs(current_velocity_)) * 0.5, -1.0, 1.0);
         ackermann.longitudinal.acceleration = acceleration;
@@ -156,7 +156,7 @@ class ManualControlNode : public rclcpp::Node
 
     rclcpp::Publisher<GateMode>::SharedPtr pub_gate_mode_;
     rclcpp::Client<EngageSrv>::SharedPtr client_engage_;
-    rclcpp::Publisher<AckermannControlCommand>::SharedPtr pub_control_command_;
+    rclcpp::Publisher<Control>::SharedPtr pub_control_command_;
     rclcpp::Publisher<GearCommand>::SharedPtr pub_gear_cmd_;
 
     rclcpp::Subscription<GateMode>::SharedPtr sub_gate_mode_;
