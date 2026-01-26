@@ -1,73 +1,165 @@
 # Autoware Manual Controller
 
-Keyboard controller for Autoware.
+A robust, modular keyboard teleoperation node designed for Autoware.universe.
+This project provides high-precision vehicle control, supporting physics-based inertial driving experiences and stable cruise control functionalities.
 
-# Build
+## 🌟 Key Features
 
-## Native Host
+### 1. Physics Mode - Default
+Simulates realistic vehicle dynamics to provide a natural driving feel, similar to racing games.
+*   **Inertia & Friction**: The vehicle coasts naturally when the throttle is released and slows down slowly due to friction.
+*   **Dynamic Steering**: Steering angle has Attack/Decay rate limits to prevent abrupt inputs, simulating the turning speed of a real steering wheel.
 
-* Source ROS and Autoware.universe workspace first.
+### 2. Cruise Mode
+Optimized for long-distance testing and maintaining constant curvature.
+*   **Smart Grid Snapping**: Tapping `W` or `S` increases/decreases speed by exactly `1.0 km/h` (snapping to the nearest integer), facilitating precise test conditions.
+*   **Steering Lock**: Unlike Physics mode, the steering angle **does not auto-center** when keys are released. This allows you to set a fixed turning radius for hands-free circular or long-curve testing.
+*   **Hold Logic**: Holding the keys provides smooth, continuous acceleration/deceleration.
 
-* Build the code
+### 3. Dynamic HUD
+The console output has been redesigned into a flicker-free HUD interface.
+*   **Standard Telemetry**: Displays Gear, Real Speed vs Target Speed, and Steering Angle (rad).
+*   **Context Awareness**:
+    *   **Physics Mode**: Displays real-time *Acceleration* (`m/s^2`) to monitor inertial state.
+    *   **Cruise Mode**: Highlights the *Set Speed*.
 
-```shell
-mkdir -p autoware_manual_control_ws/src
-cd autoware_manual_control_ws/src
-git clone https://github.com/evshary/autoware_manual_control.git
-cd ..
-colcon build
+### 4. Robust Safety & Integration
+*   **Stop-Wait-Shift Logic**: Implements a strict state machine preventing gear shifts while moving. The vehicle automatically brakes to a complete stop (`< 0.05 m/s`) before engaging Drive or Reverse, eliminating dangerous acceleration spikes.
+*   **Gear Transition UI**: Visualizes the shifting process (e.g., `Gear: D->R`) in the HUD, providing clear feedback during the safety wait period.
+*   **Auto-Reengage**: Automatically attempts to re-engage control if the signal is lost while in `External` mode.
+*   **Initial Pose Presets**: Cycle through predefined initial pose estimates (e.g., `origin`, `checkpoint_A`) using the `R` key.
+
+## 🎮 Controls
+
+### Global Keys
+| Key       | Function             | Description                                                     |
+| :-------- | :------------------- | :-------------------------------------------------------------- |
+| **Z**     | Toggle Auto/External | Switches `GateMode`. Must be in `External` mode to control.     |
+| **M**     | Switch Mode          | Cycles between `Physics` -> `Cruise` -> `Stop` modes.           |
+| **R**     | Reset Pose           | Cycles through initial pose presets (defined in `param`).       |
+| **Space** | Emergency Stop       | Force stop with max braking (-10 m/s^2). Press again to resume. |
+| **Q**     | Quit                 | Exits the node.                                                 |
+
+### Gear Selection
+*   **X**: Drive (D)
+*   **C**: Reverse (R)
+*   **V**: Park (P)
+
+### Driving Controls
+| Key       | Physics Mode Action             | Cruise Mode Action                           |
+| :-------- | :------------------------------ | :------------------------------------------- |
+| **W**     | Throttle (Linear Accel)         | **Tap**: +1 km/h <br> **Hold**: Smooth Accel |
+| **S**     | Brake (Linear Decel)            | **Tap**: -1 km/h <br> **Hold**: Smooth Decel |
+| **A / D** | Steer Left/Right (Auto-centers) | Steer Left/Right (**Angle Lock**)            |
+
+## 🏗️ Architecture
+
+This project has transitioned from a simple script to a professional **Component-Based Architecture**.
+
+### Directory Structure
+```bash
+src/
+├── core/       # Core Logic (ModeManager, Factory, Interfaces)
+├── modes/      # Concrete Drive Mode Implementations (Physics, Cruise, Stop)
+├── input/      # Input Handling (KeyboardReader, InputSystem)
+├── ui/         # User Interface (ConsoleUI)
+└── common/     # Shared Types and Constants
 ```
 
-## docker with latest Autoware
+### Data Flow
 
-* Get the code
+```mermaid
+sequenceDiagram
+    participant User
+    participant InputSystem
+    participant ModeManager
+    participant ROSNode
+    participant UI
 
-```shell
-mkdir -p $HOME/autoware_manual_control_ws/src
-cd $HOME/autoware_manual_control_ws/src
-git clone https://github.com/evshary/autoware_manual_control.git
-cd ..
+    loop 60Hz Control Loop
+        User->>InputSystem: Key Press (WASD / M / Z)
+        InputSystem->>ModeManager: InputState (Normalized)
+        ROSNode->>ModeManager: VehicleState (Feedback)
+        
+        ModeManager->>ModeManager: Update Active DriveMode
+        Note over ModeManager: Computation: Physics dynamics / Cruise logic
+        
+        ModeManager->>ROSNode: ControlCommand (Velocity/Steer)
+        ROSNode->>ROSNode: Publish to Autoware
+        
+        ModeManager->>UI: Mode Status
+        ROSNode->>UI: Vehicle Telemetry
+        UI->>User: Render Dynamic HUD
+    end
 ```
 
-* Run the latest docker and build
+### Class Structure
+We utilize a **Strategy Pattern** combined with a **Factory** to manage driving modes, allowing for runtime mode switching and easy extension of new control logic.
 
-```shell
-# Run docker
-rocker --network host --privileged --x11 --user --volume $HOME/autoware_manual_control_ws --volume $HOME/autoware_map -- ghcr.io/autowarefoundation/autoware-universe:galactic-latest-prebuilt-amd64 bash
-# Build
-cd $HOME/autoware_manual_control_ws
-colcon build
+```mermaid
+---
+config:
+  layout: elk
+---
+classDiagram
+    %% Core Components
+    class ManualControlNode {
+        -InputSystem input_system_
+        -ModeManager mode_manager_
+        +timer_callback()
+    }
+
+    class InputSystem {
+        -KeyboardReader reader_
+        +update() InputState
+    }
+
+    class ModeManager {
+        -DriveMode* active_mode_
+        +update(dt, input, vehicle_state)
+        +getCommand() ControlCommand
+        +switchMode()
+    }
+
+    class DriveModeFactory {
+        +createMode(ModeType) DriveMode*
+        +instance()
+    }
+
+    %% Drive Modes Strategy
+    class DriveMode {
+        <<interface>>
+        +update(dt, input, state)* ControlCommand
+        +onEnter(state)
+        +onExit()
+    }
+
+    %% Concrete Implementations
+    class PhysicsDriveMode {
+        -float current_speed_
+        -float current_steer_
+        +update()
+    }
+
+    class CruiseDriveMode {
+        -float target_speed_
+        -float steering_angle_
+        +update()
+    }
+
+    class StopDriveMode {
+        +update()
+    }
+
+    %% Relationships
+    ManualControlNode --> InputSystem : uses
+    ManualControlNode --> ModeManager : uses
+    ModeManager ..> DriveModeFactory : requests
+    ModeManager --> DriveMode : maintains
+    DriveMode <|.. PhysicsDriveMode
+    DriveMode <|.. CruiseDriveMode
+    DriveMode <|.. StopDriveMode
 ```
 
-# Run
+---
 
-```shell
-source install/local_setup.bash
-ros2 run autoware_manual_control keyboard_control
-```
-
-# Usage
-
-1. Toggle to external mode
-2. Set Gear Type to Drive
-3. Adjust speed and steering angle
-4. Enjoy driving :-)
-
-```
-------------------------------------
-| Different Mode:                  |
-|   z: Toggle auto & external mode |
-|   x: Gear Type => Drive          |
-|   c: Gear Type => Reverse        |
-|   v: Gear Type => Park           |
-|   s: View current mode           |
-| Speed:                           |
-|   u: Increase speed              |
-|   i: Set speed to 0              |
-|   o: Decrease speed              |
-| Steering Angle                   |
-|   j: Left turn                   |
-|   k: Set angle to 0              |
-|   l: Right turn                  |
-------------------------------------
-```
