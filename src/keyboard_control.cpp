@@ -1,99 +1,151 @@
-#include <iostream>
-#include <thread>
-#include <string>
-
+#include <chrono>
+#include <memory>
 #include <rclcpp/rclcpp.hpp>
-#include "manual_control_node.hpp"
-#include "terminal_reader.hpp"
+#include <thread>
 
-#define MAX_STEER_ANGLE  0.3925 // 22.5 * (PI / 180)
-#define STEP_STEER_ANGLE 0.0174 // 1 * (PI / 180)
-#define MAX_SPEED        27.78  // 100 km/hr = 27.78 m/s
-#define STEP_SPEED       1.389  // 5 km/hr = 1.389 m/s
+#include "common/types.hpp"
+#include "core/drive_mode_factory.hpp"
+#include "core/mode_manager.hpp"
+#include "input/input_system.hpp"
+#include "modes/cruise_mode.hpp"
+#include "modes/physics_mode.hpp"
+#include "modes/stop_mode.hpp"
+#include "ros/manual_control_node.hpp"
+#include "ui/console_ui.hpp"
 
-void print_help()
-{
-  std::cout << "------------------------------------" << std::endl;
-  std::cout << "| Different Mode:                  |" << std::endl;
-  std::cout << "|   z: Toggle auto & external mode |" << std::endl;
-  std::cout << "|   x: Gear Type => Drive          |" << std::endl;
-  std::cout << "|   c: Gear Type => Reverse        |" << std::endl;
-  std::cout << "|   v: Gear Type => Park           |" << std::endl;
-  std::cout << "|   s: View current mode           |" << std::endl;
-  std::cout << "| Speed:                           |" << std::endl;
-  std::cout << "|   u: Increase speed              |" << std::endl;
-  std::cout << "|   i: Set speed to 0              |" << std::endl;
-  std::cout << "|   o: Decrease speed              |" << std::endl;
-  std::cout << "| Steering Angle                   |" << std::endl;
-  std::cout << "|   j: Left turn                   |" << std::endl;
-  std::cout << "|   k: Set angle to 0              |" << std::endl;
-  std::cout << "|   l: Right turn                  |" << std::endl;
-  std::cout << "------------------------------------" << std::endl;
-}
+int main(int argc, char *argv[]) {
+  rclcpp::init(argc, argv);
 
-int g_thread_state;  // 1 means running, 0 means stop
+  // 1. Initialize Components
+  // Register Modes
+  auto &factory = autoware::manual_control::DriveModeFactory::instance();
+  factory.registerMode(ModeType::PHYSICS, []() {
+    return std::make_unique<autoware::manual_control::PhysicsDriveMode>();
+  });
+  factory.registerMode(ModeType::CRUISE, []() {
+    return std::make_unique<autoware::manual_control::CruiseDriveMode>();
+  });
+  factory.registerMode(ModeType::STOP, []() {
+    return std::make_unique<autoware::manual_control::StopDriveMode>();
+  });
 
-void read_keyboard(std::shared_ptr<ManualControlNode> node)
-{
-  TerminalReader t_reader;
-  double velocity = 0;  // m/s
-  double angle = 0;     // radian
+  auto node = std::make_shared<autoware::manual_control::ManualControlNode>();
+  autoware::manual_control::InputSystem input_system;
+  autoware::manual_control::ModeManager mode_manager;
+  autoware::manual_control::ConsoleUI ui;
 
-  t_reader.configure_termnial();
-  print_help();
-  while (g_thread_state) {
-    int ch = t_reader.read_key();
-    if (ch != 0) {
-      if (ch == 'z') {
-        std::string new_mode = (node->toggle_manual_control())? "EXTERNAL":"AUTO";
-        std::cout << "Toggle to " << new_mode << std::endl;
-      } else if (ch == 'x') {
-        node->update_gear_cmd(GearCommand::DRIVE);
-        std::cout << "Switch to DRIVE mode" << std::endl;
-      } else if (ch == 'c') {
-        node->update_gear_cmd(GearCommand::REVERSE);
-        std::cout << "Switch to REVERSE mode" << std::endl;
-      } else if (ch == 'v') {
-        node->update_gear_cmd(GearCommand::PARK);
-        std::cout << "Switch to PARK mode" << std::endl;
-      } else if (ch == 's') {
-        std::cout << node->get_status() << std::endl;
-      } else {
-        if (ch == 'u') {
-          velocity = std::clamp(velocity + STEP_SPEED, 0.0, MAX_SPEED);
-        } else if (ch == 'o') {
-          velocity = std::clamp(velocity - STEP_SPEED, 0.0, MAX_SPEED);
-        } else if (ch == 'i') {
-          velocity = 0.0;
-        } else if (ch == 'j') {
-          angle = std::clamp(angle + STEP_STEER_ANGLE, -MAX_STEER_ANGLE, MAX_STEER_ANGLE);
-        } else if (ch == 'l') {
-          angle = std::clamp(angle - STEP_STEER_ANGLE, -MAX_STEER_ANGLE, MAX_STEER_ANGLE);
-        } else if (ch == 'k') {
-          angle = 0;
-        } else {
-          print_help();
-          continue;
-        }
-        std::cout << "angle(deg):" << angle * 180 / M_PI << "\tvelocity(km/hr):" << velocity * 3600 / 1000 << std::endl;
-        node->update_control_cmd(velocity, angle);
+  // 2. Setup
+  ui.init();
+
+  // Check Environment for Auto-External
+  const char *sim_env = std::getenv("SCENARIO_SIMULATION");
+  if (sim_env && std::string(sim_env) == "false") {
+    node->force_external_mode();
+  }
+
+  // 3. Main Loop
+  rclcpp::Rate rate(60);
+  auto last_time = std::chrono::steady_clock::now();
+
+  // Shift Safety State
+  ShiftState shift_state = ShiftState::IDLE;
+  Gear pending_gear = Gear::PARK;
+
+  bool running = true;
+  while (rclcpp::ok() && running) {
+    auto now = std::chrono::steady_clock::now();
+    std::chrono::duration<float> dt_duration = now - last_time;
+    last_time = now;
+    float dt = dt_duration.count();
+    if (dt > 0.1f)
+      dt = 0.1f; // Cap max dt
+
+    // --- Input Phase ---
+    InputState input = input_system.update();
+
+    if (input.quit)
+      running = false;
+
+    // --- Logic Phase ---
+
+    if (input.toggle_auto) {
+      node->toggle_manual_control();
+      // Reset input state on toggle
+      input_system.reset();
+    }
+
+    if (input.reset_pose) {
+      node->reset_initial_pose();
+    }
+
+    // Get Vehicle State early for logic checks
+    VehicleState vehicle_state = node->get_vehicle_state();
+
+    // Shift Request Handling (Stop-Wait-Shift)
+    if (input.shift_drive && vehicle_state.gear != Gear::DRIVE) {
+      pending_gear = Gear::DRIVE;
+      shift_state = ShiftState::STOPPING;
+    }
+    if (input.shift_reverse && vehicle_state.gear != Gear::REVERSE) {
+      pending_gear = Gear::REVERSE;
+      shift_state = ShiftState::STOPPING;
+    }
+    if (input.shift_park && vehicle_state.gear != Gear::PARK) {
+      pending_gear = Gear::PARK;
+      shift_state = ShiftState::STOPPING;
+    }
+
+    bool override_control = false;
+    ControlCommand override_cmd;
+
+    // State Machine
+    if (shift_state == ShiftState::STOPPING) {
+      override_control = true;
+      override_cmd.velocity = 0.0f;
+      override_cmd.acceleration = -10.0f; // Max Brake
+      override_cmd.steer_angle = vehicle_state.steer_angle;
+
+      // Wait for Stop (0.05 m/s tolerance)
+      if (std::abs(vehicle_state.velocity) < 0.05f) {
+        node->set_target_gear(pending_gear);
+        shift_state = ShiftState::SHIFTING;
+      }
+    } else if (shift_state == ShiftState::SHIFTING) {
+      override_control = true;
+      override_cmd.velocity = 0.0f;
+      override_cmd.acceleration = -10.0f; // Hold Brake
+      override_cmd.steer_angle = vehicle_state.steer_angle;
+
+      // Wait for Gear Confirmation
+      if (vehicle_state.gear == pending_gear) {
+        mode_manager.reinit(vehicle_state);
+        shift_state = ShiftState::IDLE;
+        override_control = false;
       }
     }
-  }
-  t_reader.restore_terminal();
-}
 
-int main(int argc, char * argv[])
-{
-  rclcpp::init(argc, argv);
-  auto node = std::make_shared<ManualControlNode>();
-  // Run keyboard thread
-  g_thread_state = 1;
-  std::thread keyboard_thread(read_keyboard, node);
-  rclcpp::spin(node);
+    // Get Vehicle State (Already retrieved above)
+
+    // Update Mode Manager
+    mode_manager.update(dt, input, vehicle_state);
+    ControlCommand cmd = mode_manager.getCommand();
+
+    if (override_control) {
+      cmd = override_cmd;
+    }
+
+    // --- Output Phase ---
+    node->publish_command(cmd);
+
+    // --- UI Phase ---
+    ui.refresh(input_system, mode_manager, vehicle_state, cmd, shift_state,
+               pending_gear);
+
+    // ROS Spin
+    rclcpp::spin_some(node);
+    rate.sleep();
+  }
+
   rclcpp::shutdown();
-  // Stop keyboard thread
-  g_thread_state = 0; 
-  keyboard_thread.join();
   return 0;
 }

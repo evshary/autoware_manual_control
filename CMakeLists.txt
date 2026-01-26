@@ -16,7 +16,8 @@ find_package(tier4_external_api_msgs)
 find_package(autoware_control_msgs)
 find_package(autoware_vehicle_msgs)
 
-add_executable(keyboard_control src/keyboard_control.cpp)
+add_executable(keyboard_control src/keyboard_control.cpp src/core/drive_mode_factory.cpp)
+target_include_directories(keyboard_control PRIVATE src)
 ament_target_dependencies(keyboard_control rclcpp
                                            tier4_control_msgs
                                            tier4_external_api_msgs
