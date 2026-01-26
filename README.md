@@ -1,16 +1,19 @@
 # Autoware Manual Controller
 
-Keyboard controller for Autoware.
+A robust, modular keyboard teleoperation node designed for Autoware.universe.
+This project provides high-precision vehicle control, supporting physics-based inertial driving experiences and stable cruise control functionalities.
 
-# Build
+## 🛠️ Build & Run
 
-## Native Host
+A highlight of this project is the standardization of the **Containerized Verification Workflow**. Through well-encapsulated scripts, developers can verify logic and test without installing a complex Autoware / ROS 2 environment on the Host.
 
-* Source ROS and Autoware.universe workspace first.
+### Build (Normal ROS2)
 
-* Build the code
+#### Prerequisites
+*   OS: Ubuntu 22.04 / 24.04
+*   ROS 2: Humble
 
-```shell
+```bash
 mkdir -p autoware_manual_control_ws/src
 cd autoware_manual_control_ws/src
 git clone https://github.com/evshary/autoware_manual_control.git
@@ -18,56 +21,39 @@ cd ..
 colcon build
 ```
 
-## docker with latest Autoware
+### Build and Testing (Docker) - Recommended
 
-* Get the code
+We provide a simplified Docker setup that communicates with Autoware via the Host Network using DDS.
 
-```shell
-mkdir -p $HOME/autoware_manual_control_ws/src
-cd $HOME/autoware_manual_control_ws/src
+#### Prerequisites
+*   Docker & Docker Compose
+
+#### 1. Start Containers
+It is recommended to use the `--no-sim` flag, which starts all services except the `scenario_simulator`. This is very useful when you only need to verify keyboard control logic.
+
+```bash
 git clone https://github.com/evshary/autoware_manual_control.git
-cd ..
+cd autoware_manual_control
+
+# Start containers (Recommended: without scenario simulator)
+./run_containers.sh --no-sim up --build -d
+
+# If you need the built-in simulator (Scenario Simulator), just run:
+# ./run_containers.sh up --build -d
 ```
 
-* Run the latest docker and build
+#### 2. Enter Control Node
+We provide a convenient script `run_teleop.sh` that automatically performs the following:
+1. Connects to the running container.
+2. Sources environment variables.
+3. Automatically builds the latest code.
+4. Starts the `manual_control` node.
 
-```shell
-# Run docker
-rocker --network host --privileged --x11 --user --volume $HOME/autoware_manual_control_ws --volume $HOME/autoware_map -- ghcr.io/autowarefoundation/autoware-universe:galactic-latest-prebuilt-amd64 bash
-# Build
-cd $HOME/autoware_manual_control_ws
-colcon build
+```bash
+./run_teleop.sh
 ```
 
-# Run
-
-```shell
-source install/local_setup.bash
-ros2 run autoware_manual_control keyboard_control
-```
-
-# Usage
-
-1. Toggle to external mode
-2. Set Gear Type to Drive
-3. Adjust speed and steering angle
-4. Enjoy driving :-)
-
-```
-------------------------------------
-| Different Mode:                  |
-|   z: Toggle auto & external mode |
-|   x: Gear Type => Drive          |
-|   c: Gear Type => Reverse        |
-|   v: Gear Type => Park           |
-|   s: View current mode           |
-| Speed:                           |
-|   u: Increase speed              |
-|   i: Set speed to 0              |
-|   o: Decrease speed              |
-| Steering Angle                   |
-|   j: Left turn                   |
-|   k: Set angle to 0              |
-|   l: Right turn                  |
-------------------------------------
+#### 3. Stop Services
+```bash
+./run_containers.sh down
 ```
