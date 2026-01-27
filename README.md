@@ -29,17 +29,13 @@ We provide a simplified Docker setup that communicates with Autoware via the Hos
 *   Docker & Docker Compose
 
 #### 1. Start Containers
-It is recommended to use the `--no-sim` flag, which starts all services except the `scenario_simulator`. This is very useful when you only need to verify keyboard control logic.
 
 ```bash
 git clone https://github.com/evshary/autoware_manual_control.git
 cd autoware_manual_control
 
-# Start containers (Recommended: without scenario simulator)
-./run_containers.sh --no-sim up --build -d
-
-# If you need the built-in simulator (Scenario Simulator), just run:
-# ./run_containers.sh up --build -d
+# Start containers
+./run_containers.sh up --build -d
 ```
 
 #### 2. Enter Control Node

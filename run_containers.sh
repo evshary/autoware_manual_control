@@ -52,7 +52,7 @@ run_compose() {
 }
 
 # Define Edge services
-TELEOP_SERVICES="autoware scenario_simulator visualizer teleop"
+TELEOP_SERVICES="autoware visualizer teleop"
 
 # Argument parsing
 CMD=""
@@ -64,14 +64,6 @@ while [[ $# -gt 0 ]]; do
             show_help
             exit 0
             ;;
-        --no-sim)
-            export SCENARIO_SIMULATION="false"
-            # Remove scenario_simulator from TELEOP_SERVICES
-            TELEOP_SERVICES="${TELEOP_SERVICES/scenario_simulator/}"
-            # Clean up extra spaces if any
-            TELEOP_SERVICES=$(echo "$TELEOP_SERVICES" | xargs)
-            shift
-            ;;
         up|down|ps|logs|config|dry-run)
             CMD="$1"
             shift
@@ -82,9 +74,6 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
-
-# Export default if not set
-export SCENARIO_SIMULATION="${SCENARIO_SIMULATION:-true}"
 
 # Default command is 'up' if not specified
 if [ -z "$CMD" ]; then
