@@ -210,8 +210,13 @@ public:
     RCLCPP_INFO(get_logger(), "Preset: %s", current_name.c_str());
   }
 
+  bool should_start_external() const {
+    return this->get_parameter("start_as_external").as_bool();
+  }
+
 private:
   void init_parameters() {
+    this->declare_parameter("start_as_external", false);
     this->declare_parameter("init_pose.presets.names",
                             std::vector<std::string>{"origin"});
     this->declare_parameter("init_pose.presets.origin",

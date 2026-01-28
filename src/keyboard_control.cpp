@@ -35,15 +35,11 @@ int main(int argc, char *argv[]) {
   autoware::manual_control::ConsoleUI ui;
 
   // 2. Setup
-  ui.init();
-
-  // Check Environment for Auto-External
-  const char *sim_env = std::getenv("SCENARIO_SIMULATION");
-  if (sim_env && std::string(sim_env) == "false") {
+  ui.init(); // 3. Main Loop
+  if (node->should_start_external()) {
     node->force_external_mode();
   }
 
-  // 3. Main Loop
   rclcpp::Rate rate(60);
   auto last_time = std::chrono::steady_clock::now();
 
