@@ -60,11 +60,15 @@ public:
         "/vehicle/status/gear_status", 10,
         std::bind(&ManualControlNode::onGear, this, _1));
 
-    // Timer for auto-re-engage only
-    engage_timer_ = this->create_wall_timer(
-        5s, std::bind(&ManualControlNode::maintain_engage, this));
-
     init_parameters();
+
+    // Timer for state monitoring (Auto-Engage / Auto-Mode-Switch)
+    monitor_timer_ = this->create_wall_timer(
+        1s, std::bind(&ManualControlNode::monitor_state, this));
+
+    if (should_start_external()) {
+      pending_external_request_ = true;
+    }
   }
 
   // --- API for Main Loop ---
@@ -147,7 +151,8 @@ public:
   void set_target_gear(Gear gear) { target_gear_ = gear; }
 
   void force_external_mode() {
-    gate_mode_ = GateMode::EXTERNAL; // Update internal state
+    pending_external_request_ = true;
+    gate_mode_ = GateMode::EXTERNAL; // Optimistic update
 
     // Sync gear to avoid resetting to PARK
     switch (current_gear_type_) {
@@ -207,11 +212,18 @@ public:
       pose.pose.covariance[i] = (i % 7 == 0) ? 0.1 : 0.0;
     pub_initialpose_->publish(pose);
 
-    RCLCPP_INFO(get_logger(), "Preset: %s", current_name.c_str());
+    set_info_message("[ManualControl]: Preset: " + current_name);
   }
 
   bool should_start_external() const {
     return this->get_parameter("start_as_external").as_bool();
+  }
+
+  std::string get_info_message() { return info_message_; }
+
+  void set_info_message(const std::string &msg) {
+    info_message_ = msg;
+    info_message_time_ = std::chrono::steady_clock::now();
   }
 
 private:
@@ -238,7 +250,27 @@ private:
     current_gear_type_ = msg->report;
   }
 
-  void maintain_engage() {
+  void monitor_state() {
+    // 1. Handle Pending External Mode Request (Startup or user intent)
+    if (pending_external_request_) {
+      if (gate_mode_ != GateMode::EXTERNAL) {
+        // Retry publishing External Mode
+        pub_gate_mode_->publish(
+            tier4_control_msgs::build<GateMode>().data(GateMode::EXTERNAL));
+
+        // Also queue engage
+        auto req = std::make_shared<EngageSrv::Request>();
+        req->engage = true;
+        if (client_engage_->service_is_ready()) {
+          client_engage_->async_send_request(req);
+        }
+      } else {
+        // We achieved External Mode
+        pending_external_request_ = false;
+      }
+    }
+
+    // 2. Maintain Engage State (if we are in External)
     if (gate_mode_ == GateMode::EXTERNAL && !current_engage_) {
       auto req = std::make_shared<EngageSrv::Request>();
       req->engage = true;
@@ -258,7 +290,7 @@ private:
   rclcpp::Subscription<VelocityReport>::SharedPtr sub_velocity_;
   rclcpp::Subscription<GearReport>::SharedPtr sub_gear_;
 
-  rclcpp::TimerBase::SharedPtr engage_timer_;
+  rclcpp::TimerBase::SharedPtr monitor_timer_;
 
   // Internal State cache
   uint8_t gate_mode_ = GateMode::AUTO;
@@ -270,6 +302,11 @@ private:
   int current_preset_index_ = -1;
 
   Gear target_gear_ = Gear::PARK;
+
+  std::string info_message_;
+  std::chrono::steady_clock::time_point info_message_time_;
+
+  bool pending_external_request_ = false;
 };
 
 } // namespace autoware::manual_control
