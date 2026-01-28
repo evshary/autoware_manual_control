@@ -3,9 +3,8 @@
 A robust, modular keyboard teleoperation node designed for Autoware.universe.
 This project provides high-precision vehicle control, supporting physics-based inertial driving experiences and stable cruise control functionalities.
 
-## 🌟 Key Features
-
-### 1. Physics Mode - Default
+## 🚗 Driving Modes
+### 1. Physics Mode
 Simulates realistic vehicle dynamics to provide a natural driving feel, similar to racing games.
 *   **Inertia & Friction**: The vehicle coasts naturally when the throttle is released and slows down slowly due to friction.
 *   **Dynamic Steering**: Steering angle has Attack/Decay rate limits to prevent abrupt inputs, simulating the turning speed of a real steering wheel.
@@ -16,14 +15,31 @@ Optimized for long-distance testing and maintaining constant curvature.
 *   **Steering Lock**: Unlike Physics mode, the steering angle **does not auto-center** when keys are released. This allows you to set a fixed turning radius for hands-free circular or long-curve testing.
 *   **Hold Logic**: Holding the keys provides smooth, continuous acceleration/deceleration.
 
-### 3. Dynamic HUD
+### 3. Stop Mode (Default / Safety)
+*   **Emergency Braking**: Trigged by `Space`. Applies max braking force immediately.
+*   **Safety Lock**: Prevents input processing until resumed.
+
+## ⚙️ Configuration
+The node behavior can be customized via `teleop_config.yaml`.
+
+### Auto-Engagement
+```yaml
+/ManualControl:
+  ros__parameters:
+    start_as_external: true  # If true, automatically switches to External mode and engages on startup
+```
+*   **start_as_external**: Set to `true` to skip the manual `Z` toggle and immediately take control. Useful for headless setups.
+*   **init_pose**: Define preset locations for the `R` (Reset Pose) key.
+
+## 🌟 Key Features
+### Dynamic HUD
 The console output has been redesigned into a flicker-free HUD interface.
 *   **Standard Telemetry**: Displays Gear, Real Speed vs Target Speed, and Steering Angle (rad).
 *   **Context Awareness**:
     *   **Physics Mode**: Displays real-time *Acceleration* (`m/s^2`) to monitor inertial state.
     *   **Cruise Mode**: Highlights the *Set Speed*.
 
-### 4. Robust Safety & Integration
+### Robust Safety & Integration
 *   **Stop-Wait-Shift Logic**: Implements a strict state machine preventing gear shifts while moving. The vehicle automatically brakes to a complete stop (`< 0.05 m/s`) before engaging Drive or Reverse, eliminating dangerous acceleration spikes.
 *   **Gear Transition UI**: Visualizes the shifting process (e.g., `Gear: D->R`) in the HUD, providing clear feedback during the safety wait period.
 *   **Auto-Reengage**: Automatically attempts to re-engage control if the signal is lost while in `External` mode.
@@ -197,6 +213,19 @@ cd autoware_manual_control
 # Start containers
 ./run_containers.sh up --build -d
 ```
+
+---
+
+### How to add a new Drive Mode
+1.  **Inherit**: Create a new class inheriting from `DriveMode` (see `src/core/drive_mode.hpp`).
+2.  **Implement**: Implement `update()`, `onEnter()`, `onExit()`.
+3.  **Register**: In `keyboard_control.cpp` (or `main`), register the mode with the factory:
+    ```cpp
+    DriveModeFactory::instance().registerMode(ModeType::RACING, []() {
+        return std::make_unique<RacingMode>();
+    });
+    ```
+4.  **Enumerate**: Add your new `ModeType` enum in `src/common/types.hpp`.
 
 #### 2. Enter Control Node
 We provide a convenient script `run_teleop.sh` that automatically performs the following:
