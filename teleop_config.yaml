@@ -1,0 +1,8 @@
+/ManualControl:
+  ros__parameters:
+    start_as_external: false
+    init_pose:
+      presets:
+        names: ["origin", "intersection"]
+        origin: [0.0, 0.0, 0.0, 0.0]
+        intersection: [15.0, 20.0, 0.0, 1.57]
