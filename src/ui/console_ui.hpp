@@ -21,14 +21,23 @@ public:
 
   void refresh(const InputSystem &input, const ModeManager &manager,
                const VehicleState &state, const ControlCommand &cmd,
-               ShiftState shiftState, Gear pendingGear) {
+               ShiftState shiftState, Gear pendingGear,
+               const std::string &info_msg = "") {
     // Only refresh at reasonable rate (~10Hz) to avoid flickering
     static int frame = 0;
     if (frame++ % 6 != 0)
       return;
 
-    std::cout << "\r\033[K"; // Clear line
+    std::cout
+        << "\033[u"; // Restore cursor to start of status line (below header)
+    std::cout << "\033[J"; // Clear everything below
 
+    // 1. Info Message (Persistent/Top)
+    if (!info_msg.empty()) {
+      std::cout << info_msg << "\n";
+    }
+
+    // 2. Status Line
     // Helper to stringify gear
     auto gearToString = [](Gear g) -> std::string {
       switch (g) {
@@ -49,21 +58,20 @@ public:
 
     // If shifting, show transition
     if (shiftState != ShiftState::IDLE) {
-      // Blinking arrow? or just static ->
       gear_display += "->" + gearToString(pendingGear);
     }
 
     std::cout << "[" << manager.getCurrentModeName() << "] "
               << "Gear: " << gear_display << " | ";
 
-    // 2. Real Speed & Set Speed (Command) & Steer
+    // Real Speed & Set Speed (Command) & Steer
     std::cout << "Real: " << std::fixed << std::setprecision(1)
               << std::abs(state.velocity * 3.6) << " km/hr | ";
 
     std::cout << "Set: " << (cmd.velocity * 3.6) << " km/hr | ";
     std::cout << "Steer: " << std::setprecision(2) << cmd.steer_angle << " rad";
 
-    // 3. Extra Info (Mode specific)
+    // Extra Info (Mode specific)
     std::string status = manager.getStatusString();
     if (!status.empty()) {
       std::cout << " | " << status;
@@ -93,14 +101,14 @@ public:
 private:
   void printHeader() {
     std::cout << "========================================" << std::endl;
-    std::cout << "   Autoware Teleop (Refactored)         " << std::endl;
+    std::cout << "   Autoware Teleop                      " << std::endl;
     std::cout << "========================================" << std::endl;
     std::cout << "  [W] Throttle  [S] Brake               " << std::endl;
     std::cout << "  [A] Left      [D] Right               " << std::endl;
     std::cout << "----------------------------------------" << std::endl;
     std::cout << "  [Z] Auto/Local (Toggle)               " << std::endl;
     std::cout << "  [X] Drive  [C] Reverse  [V] Park      " << std::endl;
-    std::cout << "  [SPACE] Emergency Stop                " << std::endl;
+    std::cout << "  [SPACE] Emergency Stop / Resume       " << std::endl;
     std::cout << "  [R] Reset Initial Pose                " << std::endl;
 
     std::cout << "  [M] Switch Mode (";
@@ -119,6 +127,7 @@ private:
 
     std::cout << "  [Q] Quit                              " << std::endl;
     std::cout << "========================================" << std::endl;
+    std::cout << "\033[s"; // Save Cursor Position
   }
 };
 

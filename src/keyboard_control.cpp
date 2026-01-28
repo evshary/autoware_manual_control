@@ -135,7 +135,7 @@ int main(int argc, char *argv[]) {
 
     // --- UI Phase ---
     ui.refresh(input_system, mode_manager, vehicle_state, cmd, shift_state,
-               pending_gear);
+               pending_gear, node->get_info_message());
 
     // ROS Spin
     rclcpp::spin_some(node);
