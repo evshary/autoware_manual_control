@@ -1,0 +1,18 @@
+name: autoware_manual_control_release
+services:
+  autoware:
+    network_mode: host
+    image: ghcr.io/autowarefoundation/autoware:universe
+    volumes:
+      - autoware_map:/autoware_map
+    environment:
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    command: >
+      bash -c "source /opt/ros/humble/setup.bash && ros2 launch autoware_launch planning_simulator.launch.xml map_path:=/autoware_map vehicle_model:=sample_vehicle sensor_model:=sample_sensor_kit rviz:=false"
+
+  teleop:
+    image: ghcr.io/evshary/autoware_manual_control:feat-ci-image-release
+    network_mode: host
+
+volumes:
+  autoware_map:
