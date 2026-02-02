@@ -58,5 +58,6 @@ RUN echo "source /autoware_manual_control_ws/install/setup.bash" >> /root/.bashr
 # Set working directory
 WORKDIR /autoware_manual_control_ws
 
-# Default command
-CMD ["bash", "-c", "source /autoware_manual_control_ws/install/setup.bash && ros2 run autoware_manual_control keyboard_control"]
+
+# Default command (Idle, waits for run_teleop.sh)
+CMD ["sleep", "infinity"]

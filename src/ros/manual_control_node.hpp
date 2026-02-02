@@ -32,7 +32,11 @@ namespace autoware::manual_control {
 
 class ManualControlNode : public rclcpp::Node {
 public:
-  ManualControlNode() : Node("ManualControl") {
+  ManualControlNode()
+      : Node("ManualControl",
+             rclcpp::NodeOptions()
+                 .allow_undeclared_parameters(true)
+                 .automatically_declare_parameters_from_overrides(true)) {
     // Publishers
     pub_gate_mode_ = this->create_publisher<GateMode>(
         "/control/gate_mode_cmd", rclcpp::QoS(1).transient_local());
@@ -228,11 +232,17 @@ public:
 
 private:
   void init_parameters() {
-    this->declare_parameter("start_as_external", false);
-    this->declare_parameter("init_pose.presets.names",
-                            std::vector<std::string>{"origin"});
-    this->declare_parameter("init_pose.presets.origin",
-                            std::vector<double>{0.0, 0.0, 0.0, 0.0});
+    if (!this->has_parameter("start_as_external")) {
+      this->declare_parameter("start_as_external", false);
+    }
+    if (!this->has_parameter("init_pose.presets.names")) {
+      this->declare_parameter("init_pose.presets.names",
+                              std::vector<std::string>{"origin"});
+    }
+    if (!this->has_parameter("init_pose.presets.origin")) {
+      this->declare_parameter("init_pose.presets.origin",
+                              std::vector<double>{0.0, 0.0, 0.0, 0.0});
+    }
     preset_names_ =
         this->get_parameter("init_pose.presets.names").as_string_array();
   }
