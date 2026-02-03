@@ -16,3 +16,5 @@ services:
 
 volumes:
   autoware_map:
+    # Use the manually created external volume to avoid "project name" prefix mismatch
+    external: true
