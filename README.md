@@ -3,21 +3,83 @@
 A robust, modular keyboard teleoperation node designed for Autoware.universe.
 This project provides high-precision vehicle control, supporting physics-based inertial driving experiences and stable cruise control functionalities.
 
-## 🚗 Driving Modes
-### 1. Physics Mode
-Simulates realistic vehicle dynamics to provide a natural driving feel, similar to racing games.
-*   **Inertia & Friction**: The vehicle coasts naturally when the throttle is released and slows down slowly due to friction.
-*   **Dynamic Steering**: Steering angle has Attack/Decay rate limits to prevent abrupt inputs, simulating the turning speed of a real steering wheel.
+## 🚀 Quick Start (Release Container)
 
-### 2. Cruise Mode
-Optimized for long-distance testing and maintaining constant curvature.
-*   **Smart Grid Snapping**: Tapping `W` or `S` increases/decreases speed by exactly `1.0 km/h` (snapping to the nearest integer), facilitating precise test conditions.
-*   **Steering Lock**: Unlike Physics mode, the steering angle **does not auto-center** when keys are released. This allows you to set a fixed turning radius for hands-free circular or long-curve testing.
-*   **Hold Logic**: Holding the keys provides smooth, continuous acceleration/deceleration.
+The fastest way to run the controller without building from source.
 
-### 3. Stop Mode (Default / Safety)
-*   **Emergency Braking**: Trigged by `Space`. Applies max braking force immediately.
-*   **Safety Lock**: Prevents input processing until resumed.
+### 0. Prerequisites
+The Autoware container (started via compose) requires a map volume. Run this **once** to populate it:
+```bash
+docker run --rm -v autoware_map:/map \
+  ghcr.io/autowarefoundation/autoware-tools:scenario-simulator \
+  cp -r /opt/autoware/share/kashiwanoha_map/map/. /map/
+```
+
+### Method 1: Docker Compose (Recommended)
+```bash
+# 1. Start Services (Autoware + Teleop Node)
+docker compose -f docker-compose-release.yaml up -d
+
+# 2. Attach & Control
+./run_teleop.sh
+```
+
+### Method 2: Docker Standalone
+Since the release container idles by default (to prevent node conflicts), you must verify the run command:
+
+```bash
+# Basic Run
+docker run --rm -it --net=host \
+  ghcr.io/evshary/autoware_manual_control:feat-ci-image-release \
+  ros2 run autoware_manual_control keyboard_control
+
+# With Custom Config
+docker run --rm -it --net=host \
+  -v $(pwd)/teleop_config.yaml:/autoware_manual_control_ws/teleop_config.yaml \
+  ghcr.io/evshary/autoware_manual_control:feat-ci-image-release \
+  ros2 run autoware_manual_control keyboard_control --ros-args --params-file teleop_config.yaml
+```
+
+---
+
+## 🕹️ Operation Guide
+
+### 1. Driving Checklist
+Follow this sequence to specific start driving:
+
+1.  **Set Initial Pose**: Press `R` to cycle through preset locations (e.g., origin) to initialize the vehicle on the map.
+2.  **Engage External Mode**: Press `Z` to switch `GateMode` to `External`.
+3.  **Shift Gear**: Press `X` for Drive (D) or `C` for Reverse (R).
+4.  **Select Drive Mode**: Press `M` to switch from the default `Stop` mode to `Physics` or `Cruise` mode.
+5.  **Drive**: Use `WASD` to control the vehicle.
+
+### 2. Controls
+| Key       | Function             | Description                                                     |
+| :-------- | :------------------- | :-------------------------------------------------------------- |
+| **Z**     | Toggle Auto/External | Switches `GateMode`. Must be in `External` mode to control.     |
+| **M**     | Switch Mode          | Cycles between `Physics` -> `Cruise` -> `Stop` modes.           |
+| **R**     | Reset Pose           | Cycles through initial pose presets (defined in `param`).       |
+| **Space** | Emergency Stop       | Force stop with max braking (-10 m/s^2). Press again to resume. |
+| **Q**     | Quit                 | Exits the node.                                                 |
+
+#### Gear Selection
+*   **X**: Drive (D)
+*   **C**: Reverse (R)
+*   **V**: Park (P)
+
+#### Driving Controls
+| Key       | Physics Mode Action             | Cruise Mode Action                           |
+| :-------- | :------------------------------ | :------------------------------------------- |
+| **W**     | Throttle (Linear Accel)         | **Tap**: +1 km/h <br> **Hold**: Smooth Accel |
+| **S**     | Brake (Linear Decel)            | **Tap**: -1 km/h <br> **Hold**: Smooth Decel |
+| **A / D** | Steer Left/Right (Auto-centers) | Steer Left/Right (**Angle Lock**)            |
+
+### 3. Driving Modes
+*   **Physics Mode**: Simulates realistic inertia & friction. Steering has attack/decay limits.
+*   **Cruise Mode**: optimized for testing. `W`/`S` snaps speed by 1.0 km/h. Steering does not auto-center (Angle Lock).
+*   **Stop Mode**: Safety default. Max braking.
+
+---
 
 ## ⚙️ Configuration
 The node behavior can be customized via `teleop_config.yaml`.
@@ -31,42 +93,36 @@ The node behavior can be customized via `teleop_config.yaml`.
 *   **start_as_external**: Set to `true` to skip the manual `Z` toggle and immediately take control. Useful for headless setups.
 *   **init_pose**: Define preset locations for the `R` (Reset Pose) key.
 
-## 🌟 Key Features
-### Dynamic HUD
-The console output has been redesigned into a flicker-free HUD interface.
-*   **Standard Telemetry**: Displays Gear, Real Speed vs Target Speed, and Steering Angle (rad).
-*   **Context Awareness**:
-    *   **Physics Mode**: Displays real-time *Acceleration* (`m/s^2`) to monitor inertial state.
-    *   **Cruise Mode**: Highlights the *Set Speed*.
+---
 
-### Robust Safety & Integration
-*   **Stop-Wait-Shift Logic**: Implements a strict state machine preventing gear shifts while moving. The vehicle automatically brakes to a complete stop (`< 0.05 m/s`) before engaging Drive or Reverse, eliminating dangerous acceleration spikes.
-*   **Gear Transition UI**: Visualizes the shifting process (e.g., `Gear: D->R`) in the HUD, providing clear feedback during the safety wait period.
-*   **Auto-Reengage**: Automatically attempts to re-engage control if the signal is lost while in `External` mode.
-*   **Initial Pose Presets**: Cycle through predefined initial pose estimates (e.g., `origin`, `checkpoint_A`) using the `R` key.
+## 🛠️ Development Setup
 
-## 🎮 Controls
+For developers who want to modify source code or debug.
 
-### Global Keys
-| Key       | Function             | Description                                                     |
-| :-------- | :------------------- | :-------------------------------------------------------------- |
-| **Z**     | Toggle Auto/External | Switches `GateMode`. Must be in `External` mode to control.     |
-| **M**     | Switch Mode          | Cycles between `Physics` -> `Cruise` -> `Stop` modes.           |
-| **R**     | Reset Pose           | Cycles through initial pose presets (defined in `param`).       |
-| **Space** | Emergency Stop       | Force stop with max braking (-10 m/s^2). Press again to resume. |
-| **Q**     | Quit                 | Exits the node.                                                 |
+### Prerequisites
+*   Docker & Docker Compose (Recommended) OR ROS 2 Humble
 
-### Gear Selection
-*   **X**: Drive (D)
-*   **C**: Reverse (R)
-*   **V**: Park (P)
+### 1. Build and Run (Docker)
+We provide a simplified Docker setup that communicates with Autoware via the Host Network.
 
-### Driving Controls
-| Key       | Physics Mode Action             | Cruise Mode Action                           |
-| :-------- | :------------------------------ | :------------------------------------------- |
-| **W**     | Throttle (Linear Accel)         | **Tap**: +1 km/h <br> **Hold**: Smooth Accel |
-| **S**     | Brake (Linear Decel)            | **Tap**: -1 km/h <br> **Hold**: Smooth Decel |
-| **A / D** | Steer Left/Right (Auto-centers) | Steer Left/Right (**Angle Lock**)            |
+```bash
+# 1. Start Dev Containers
+./run_containers.sh up --build -d
+
+# 2. Enter Control Node (Auto-builds & Runs)
+./run_teleop.sh
+```
+
+### 2. Build (Native ROS 2)
+```bash
+mkdir -p autoware_manual_control_ws/src
+cd autoware_manual_control_ws/src
+git clone https://github.com/evshary/autoware_manual_control.git
+cd ..
+colcon build
+```
+
+---
 
 ## 🏗️ Architecture
 
@@ -177,68 +233,22 @@ classDiagram
     DriveMode <|.. StopDriveMode
 ```
 
----
-
-## 🛠️ Build & Run
-
-A highlight of this project is the standardization of the **Containerized Verification Workflow**. Through well-encapsulated scripts, developers can verify logic and test without installing a complex Autoware / ROS 2 environment on the Host.
-
-### Build (Normal ROS2)
-
-#### Prerequisites
-*   OS: Ubuntu 22.04 / 24.04
-*   ROS 2: Humble
-
-```bash
-mkdir -p autoware_manual_control_ws/src
-cd autoware_manual_control_ws/src
-git clone https://github.com/evshary/autoware_manual_control.git
-cd ..
-colcon build
-```
-
-### Build and Testing (Docker) - Recommended
-
-We provide a simplified Docker setup that communicates with Autoware via the Host Network using DDS.
-
-#### Prerequisites
-*   Docker & Docker Compose
-
-#### 1. Start Containers
-
-```bash
-git clone https://github.com/evshary/autoware_manual_control.git
-cd autoware_manual_control
-
-# Start containers
-./run_containers.sh up --build -d
-```
-
----
-
 ### How to add a new Drive Mode
 1.  **Inherit**: Create a new class inheriting from `DriveMode` (see `src/core/drive_mode.hpp`).
 2.  **Implement**: Implement `update()`, `onEnter()`, `onExit()`.
-3.  **Register**: In `keyboard_control.cpp` (or `main`), register the mode with the factory:
-    ```cpp
-    DriveModeFactory::instance().registerMode(ModeType::RACING, []() {
-        return std::make_unique<RacingMode>();
-    });
-    ```
+3.  **Register**: In `keyboard_control.cpp` (or `main`), register the mode with the factory.
 4.  **Enumerate**: Add your new `ModeType` enum in `src/common/types.hpp`.
 
-#### 2. Enter Control Node
-We provide a convenient script `run_teleop.sh` that automatically performs the following:
-1. Connects to the running container.
-2. Sources environment variables.
-3. Automatically builds the latest code.
-4. Starts the `manual_control` node.
+### CI/CD Pipeline
+*   **Triggers**: Push to `main` or Tag `v*` -> Builds & Pushes to GHCR.
+*   **Image**: `ghcr.io/evshary/autoware_manual_control:latest`
 
-```bash
-./run_teleop.sh
-```
+---
 
-#### 3. Stop Services
-```bash
-./run_containers.sh down
-```
+## ❓ Troubleshooting
+
+### Global Status Error (Missing Map)
+If you encounter a "Global Status Error" in RViz or TF errors related to the map frame (`map` frame does not exist), it is likely that the `autoware_map` volume is empty.
+
+👉 **Solution**: Run the map setup command in the **Quick Start** section.
+
