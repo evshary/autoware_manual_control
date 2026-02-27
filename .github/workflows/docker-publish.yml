@@ -4,8 +4,14 @@ on:
   push:
     branches: [ "main", "feat/*" ] # Allow testing on feature branches
     tags: [ 'v*.*.*' ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   pull_request:
     branches: [ "main" ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   workflow_dispatch:
 
 env:
@@ -47,6 +53,6 @@ jobs:
         with:
           context: .
           file: Dockerfile.release
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

@@ -3,6 +3,8 @@
 A robust, modular keyboard teleoperation node designed for Autoware.universe.
 This project provides high-precision vehicle control, supporting physics-based inertial driving experiences and stable cruise control functionalities.
 
+🎥 **[Watch the Demo Video](https://www.youtube.com/watch?v=Pyi3uyONG8A)**
+
 ## 🚀 Quick Start (Release Container)
 
 The fastest way to run the controller without building from source.
