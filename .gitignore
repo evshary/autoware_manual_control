@@ -2,3 +2,5 @@ build
 install
 log
 tmp
+# Local copy, seeded from teleop_config.example.yaml on first run.
+teleop_config.yaml
