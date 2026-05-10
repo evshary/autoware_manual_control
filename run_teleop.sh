@@ -1,7 +1,14 @@
 #!/bin/bash
 
-# Check if teleop service is running
-if ! docker compose ps --services --filter "status=running" | grep -q "teleop"; then
+# Pick the compose project that has teleop running. Dev wins when both are
+# up so a developer iterating source always lands in the mounted container
+# (the colcon-refresh branch below depends on package.xml being present).
+COMPOSE_OPTS=""
+if docker compose ps --services --filter "status=running" 2>/dev/null | grep -q "^teleop$"; then
+    :
+elif docker compose -f docker-compose-release.yaml ps --services --filter "status=running" 2>/dev/null | grep -q "^teleop$"; then
+    COMPOSE_OPTS="-f docker-compose-release.yaml"
+else
     echo -e "\033[0;31m[Error]\033[0m Teleop service is not running."
     exit 1
 fi
@@ -10,7 +17,7 @@ echo -e "\033[1;33m[Teleop]\033[0m Terminal Mode"
 echo "Connecting to container..."
 
 # Execute interactive bash with environment sourced
-docker compose exec -it teleop bash -c "
+docker compose $COMPOSE_OPTS exec -it teleop bash -c "
     source /opt/autoware/setup.bash && \
     cd /autoware_manual_control_ws && \
     
