@@ -10,6 +10,14 @@ services:
     command: >
       bash -c "source /opt/ros/humble/setup.bash && ros2 launch autoware_launch planning_simulator.launch.xml map_path:=/autoware_map vehicle_model:=sample_vehicle sensor_model:=sample_sensor_kit rviz:=false"
 
+  visualizer:
+    network_mode: host
+    image: ghcr.io/autowarefoundation/autoware-tools:visualizer-20251009
+    environment:
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - REMOTE_PASSWORD=o
+      - USE_SIM_TIME=false
+
   teleop:
     image: ${TELEOP_IMAGE:-ghcr.io/evshary/autoware_manual_control:latest}
     network_mode: host
