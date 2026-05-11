@@ -32,15 +32,18 @@ Since the release container idles by default (to prevent node conflicts), you mu
 ```bash
 # Basic Run
 docker run --rm -it --net=host \
-  ghcr.io/evshary/autoware_manual_control:feat-ci-image-release \
+  "${TELEOP_IMAGE:-ghcr.io/evshary/autoware_manual_control:latest}" \
   ros2 run autoware_manual_control keyboard_control
 
 # With Custom Config
 docker run --rm -it --net=host \
   -v $(pwd)/teleop_config.yaml:/autoware_manual_control_ws/teleop_config.yaml \
-  ghcr.io/evshary/autoware_manual_control:feat-ci-image-release \
+  "${TELEOP_IMAGE:-ghcr.io/evshary/autoware_manual_control:latest}" \
   ros2 run autoware_manual_control keyboard_control --ros-args --params-file teleop_config.yaml
 ```
+
+`TELEOP_IMAGE` can be overridden to point at a fork's CI build (e.g.
+`TELEOP_IMAGE=ghcr.io/<your-fork>/autoware_manual_control:<tag>`).
 
 ---
 
