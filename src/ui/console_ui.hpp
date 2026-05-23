@@ -4,7 +4,7 @@
 
 #include "common/types.hpp"
 #include "core/drive_mode_factory.hpp"
-#include "core/mode_manager.hpp"
+#include "core/telemetry.hpp"
 #include "input/input_system.hpp"
 #include <cmath>
 #include <iomanip>
@@ -12,17 +12,18 @@
 
 namespace autoware::manual_control {
 
+// Keyboard TelemetrySink: renders Telemetry to the terminal. The key
+// highlight is read from the InputSystem injected at construction.
 class ConsoleUI {
 public:
+  explicit ConsoleUI(const InputSystem &input) : input(input) {}
+
   void init() {
     std::cout << "\033[2J\033[1;1H"; // Clear screen
     printHeader();
   }
 
-  void refresh(const InputSystem &input, const ModeManager &manager,
-               const VehicleState &state, const ControlCommand &cmd,
-               ShiftState shiftState, Gear pendingGear,
-               const std::string &info_msg = "") {
+  void publish(const Telemetry &t) {
     // Only refresh at reasonable rate (~10Hz) to avoid flickering
     static int frame = 0;
     if (frame++ % 6 != 0)
@@ -33,8 +34,8 @@ public:
     std::cout << "\033[J"; // Clear everything below
 
     // 1. Info Message (Persistent/Top)
-    if (!info_msg.empty()) {
-      std::cout << info_msg << "\n";
+    if (!t.info.empty()) {
+      std::cout << t.info << "\n";
     }
 
     // 2. Status Line
@@ -54,27 +55,27 @@ public:
       }
     };
 
-    std::string gear_display = gearToString(state.gear);
+    std::string gear_display = gearToString(t.vehicle.gear);
 
     // If shifting, show transition
-    if (shiftState != ShiftState::IDLE) {
-      gear_display += "->" + gearToString(pendingGear);
+    if (t.shift_state != ShiftState::IDLE) {
+      gear_display += "->" + gearToString(t.pending_gear);
     }
 
-    std::cout << "[" << manager.getCurrentModeName() << "] "
+    std::cout << "[" << t.mode << "] "
               << "Gear: " << gear_display << " | ";
 
     // Real Speed & Set Speed (Command) & Steer
     std::cout << "Real: " << std::fixed << std::setprecision(1)
-              << std::abs(state.velocity * 3.6) << " km/hr | ";
+              << std::abs(t.vehicle.velocity * 3.6) << " km/hr | ";
 
-    std::cout << "Set: " << (cmd.velocity * 3.6) << " km/hr | ";
-    std::cout << "Steer: " << std::setprecision(2) << cmd.steer_angle << " rad";
+    std::cout << "Set: " << (t.command.velocity * 3.6) << " km/hr | ";
+    std::cout << "Steer: " << std::setprecision(2) << t.command.steer_angle
+              << " rad";
 
     // Extra Info (Mode specific)
-    std::string status = manager.getStatusString();
-    if (!status.empty()) {
-      std::cout << " | " << status;
+    if (!t.mode_status.empty()) {
+      std::cout << " | " << t.mode_status;
     }
 
     std::cout << " | "; // Separator for Keys
@@ -129,6 +130,8 @@ private:
     std::cout << "========================================" << std::endl;
     std::cout << "\033[s"; // Save Cursor Position
   }
+
+  const InputSystem &input;
 };
 
 } // namespace autoware::manual_control
