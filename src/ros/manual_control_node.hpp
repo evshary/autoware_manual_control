@@ -10,6 +10,7 @@
 #include <tier4_control_msgs/msg/gate_mode.hpp>
 #include <tier4_external_api_msgs/srv/engage.hpp>
 
+#include <autoware_adapi_v1_msgs/msg/manual_operator_heartbeat.hpp>
 #include <autoware_vehicle_msgs/msg/engage.hpp>
 #include <autoware_vehicle_msgs/msg/gear_report.hpp>
 #include <autoware_vehicle_msgs/msg/velocity_report.hpp>
@@ -23,6 +24,7 @@ using EngageSrv = tier4_external_api_msgs::srv::Engage;
 using autoware_control_msgs::msg::Control;
 using autoware_vehicle_msgs::msg::GearCommand;
 
+using autoware_adapi_v1_msgs::msg::ManualOperatorHeartbeat;
 using autoware_vehicle_msgs::msg::Engage;
 using autoware_vehicle_msgs::msg::GearReport;
 using autoware_vehicle_msgs::msg::VelocityReport;
@@ -30,9 +32,14 @@ using geometry_msgs::msg::PoseWithCovarianceStamped;
 
 namespace autoware::manual_control {
 
+// LOCAL drives the gate directly (/control/command/control_cmd, no heartbeat);
+// REMOTE feeds external_cmd_selector and heartbeats /external/remote/heartbeat
+// so vehicle_cmd_gate stays live.
+enum class OperatorRole { LOCAL, REMOTE };
+
 class ManualControlNode : public rclcpp::Node {
 public:
-  ManualControlNode()
+  explicit ManualControlNode(OperatorRole role = OperatorRole::LOCAL)
       : Node("ManualControl",
              rclcpp::NodeOptions()
                  .allow_undeclared_parameters(true)
@@ -43,12 +50,27 @@ public:
     client_engage_ = this->create_client<EngageSrv>(
         "/api/autoware/set/engage", rmw_qos_profile_services_default);
 
+    const std::string control_cmd_topic =
+        (role == OperatorRole::REMOTE) ? "/external/selected/control_cmd"
+                                       : "/control/command/control_cmd";
     pub_control_command_ = this->create_publisher<Control>(
-        "/control/command/control_cmd", rclcpp::QoS(1).transient_local());
+        control_cmd_topic, rclcpp::QoS(1).transient_local());
     pub_gear_cmd_ =
         this->create_publisher<GearCommand>("/external/selected/gear_cmd", 1);
     pub_initialpose_ = this->create_publisher<PoseWithCovarianceStamped>(
         "/initialpose", rclcpp::QoS(1));
+
+    // heartbeat (REMOTE only)
+    if (role == OperatorRole::REMOTE) {
+      pub_heartbeat_ = this->create_publisher<ManualOperatorHeartbeat>(
+          "/external/remote/heartbeat", 1);
+      heartbeat_timer_ = this->create_wall_timer(100ms, [this]() {
+        ManualOperatorHeartbeat msg;
+        msg.stamp = this->get_clock()->now();
+        msg.ready = true;
+        pub_heartbeat_->publish(msg);
+      });
+    }
 
     // Subscribers
     sub_gate_mode_ = this->create_subscription<GateMode>(
@@ -294,6 +316,7 @@ private:
   rclcpp::Publisher<Control>::SharedPtr pub_control_command_;
   rclcpp::Publisher<GearCommand>::SharedPtr pub_gear_cmd_;
   rclcpp::Publisher<PoseWithCovarianceStamped>::SharedPtr pub_initialpose_;
+  rclcpp::Publisher<ManualOperatorHeartbeat>::SharedPtr pub_heartbeat_; // REMOTE only
 
   rclcpp::Subscription<GateMode>::SharedPtr sub_gate_mode_;
   rclcpp::Subscription<Engage>::SharedPtr sub_engage_;
@@ -301,6 +324,7 @@ private:
   rclcpp::Subscription<GearReport>::SharedPtr sub_gear_;
 
   rclcpp::TimerBase::SharedPtr monitor_timer_;
+  rclcpp::TimerBase::SharedPtr heartbeat_timer_; // REMOTE only
 
   // Internal State cache
   uint8_t gate_mode_ = GateMode::AUTO;
