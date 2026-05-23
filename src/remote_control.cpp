@@ -11,12 +11,9 @@
 
 #include "bridge/zenoh/zenoh_input.hpp"
 #include "bridge/zenoh/zenoh_telemetry.hpp"
-#include "common/types.hpp"
 #include "core/control_runtime.hpp"
 #include "core/drive_mode_factory.hpp"
-#include "modes/cruise_mode.hpp"
-#include "modes/physics_mode.hpp"
-#include "modes/stop_mode.hpp"
+#include "core/params_loader.hpp"
 #include "ros/manual_control_node.hpp"
 
 using namespace autoware::manual_control;
@@ -24,37 +21,15 @@ using namespace autoware::manual_control;
 int main(int argc, char *argv[]) {
   rclcpp::init(argc, argv);
 
-  // Register Modes
-  auto &factory = DriveModeFactory::instance();
-  factory.registerMode(ModeType::PHYSICS,
-                       []() { return std::make_unique<PhysicsDriveMode>(); });
-  factory.registerMode(ModeType::CRUISE,
-                       []() { return std::make_unique<CruiseDriveMode>(); });
-  factory.registerMode(ModeType::STOP,
-                       []() { return std::make_unique<StopDriveMode>(); });
-
   auto node = std::make_shared<ManualControlNode>(OperatorRole::REMOTE);
+  register_default_modes(DriveModeFactory::instance(), *node);
 
-  auto declare = [&](const char *name, const rclcpp::ParameterValue &def) {
-    if (!node->has_parameter(name))
-      node->declare_parameter(name, def);
-  };
-  declare("zenoh_config", rclcpp::ParameterValue(std::string("")));
-  declare("vehicle", rclcpp::ParameterValue(std::string("v1")));
-  declare("arrival_timeout_ms", rclcpp::ParameterValue(500.0));
-  declare("control_rate_hz", rclcpp::ParameterValue(60.0));
-
-  // params-file values may arrive typed as int; read uniformly as double.
-  auto as_double = [&](const char *name) -> double {
-    auto p = node->get_parameter(name);
-    return (p.get_type() == rclcpp::ParameterType::PARAMETER_INTEGER)
-               ? static_cast<double>(p.as_int())
-               : p.as_double();
-  };
-
-  const std::string zenoh_cfg = node->get_parameter("zenoh_config").as_string();
-  const std::string vehicle = node->get_parameter("vehicle").as_string();
-  const double rate_hz = as_double("control_rate_hz");
+  const std::string zenoh_cfg =
+      load_param<std::string>(*node, "zenoh_config", std::string{});
+  const std::string vehicle =
+      load_param<std::string>(*node, "vehicle", std::string{"v1"});
+  const float arrival_timeout_ms =
+      load_float(*node, "arrival_timeout_ms", 500.0f);
 
   zenoh::Config zconf = zenoh_cfg.empty()
                             ? zenoh::Config::create_default()
@@ -64,18 +39,16 @@ int main(int argc, char *argv[]) {
 
   ZenohInputConfig in_cfg;
   in_cfg.intent_key = "manual_control/" + vehicle + "/intent";
-  in_cfg.arrival_timeout_s =
-      static_cast<float>(as_double("arrival_timeout_ms") / 1000.0);
+  in_cfg.arrival_timeout_s = arrival_timeout_ms / 1000.0f;
   ZenohInput input(session, in_cfg);
 
   ZenohTelemetry telemetry(session, input,
                            "manual_control/" + vehicle + "/telemetry");
 
-  RuntimeConfig cfg;
-  cfg.rate_hz = rate_hz;
+  RuntimeConfig cfg = load_runtime_config(*node);
 
   std::fprintf(stderr, "[remote_control] vehicle=%s rate=%.0fHz intent=%s\n",
-               vehicle.c_str(), rate_hz, in_cfg.intent_key.c_str());
+               vehicle.c_str(), cfg.rate_hz, in_cfg.intent_key.c_str());
 
   run_control_runtime(node, input, telemetry, cfg);
 

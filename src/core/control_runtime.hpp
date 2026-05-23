@@ -20,6 +20,7 @@ namespace autoware::manual_control {
 struct RuntimeConfig {
   double rate_hz = 60.0;
   float shift_stop_tolerance = 0.05f; // m/s — speed below which a shift proceeds
+  float shift_brake_accel = -10.0f;   // m/s^2 — override accel while shifting
 };
 
 // InputSource and TelemetrySink are duck-typed:
@@ -90,7 +91,7 @@ void run_control_runtime(std::shared_ptr<ManualControlNode> node,
     if (shift_state == ShiftState::STOPPING) {
       override_control = true;
       override_cmd.velocity = 0.0f;
-      override_cmd.acceleration = -10.0f; // Max Brake
+      override_cmd.acceleration = cfg.shift_brake_accel;
       override_cmd.steer_angle = vehicle_state.steer_angle;
 
       if (std::abs(vehicle_state.velocity) < cfg.shift_stop_tolerance) {
@@ -100,7 +101,7 @@ void run_control_runtime(std::shared_ptr<ManualControlNode> node,
     } else if (shift_state == ShiftState::SHIFTING) {
       override_control = true;
       override_cmd.velocity = 0.0f;
-      override_cmd.acceleration = -10.0f; // Hold Brake
+      override_cmd.acceleration = cfg.shift_brake_accel;
       override_cmd.steer_angle = vehicle_state.steer_angle;
 
       if (vehicle_state.gear == pending_gear) {
