@@ -17,6 +17,8 @@ services:
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
       - REMOTE_PASSWORD=o
       - USE_SIM_TIME=false
+    extra_hosts:
+      - "${HOSTNAME:-localhost}:127.0.0.1"
 
   teleop:
     network_mode: host
