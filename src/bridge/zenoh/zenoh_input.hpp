@@ -142,7 +142,7 @@ private:
     in.mode_cycle = j.value("mode_cycle", int64_t{0});
     in.toggle_auto = j.value("toggle_auto", int64_t{0});
     in.reset_pose = j.value("reset_pose", int64_t{0});
-    in.client_id = j["client_id"].get<std::string>();
+    in.client_id = j.value("client_id", std::string{});
 
     std::lock_guard<std::mutex> lock(mutex_);
     latest_ = in;
