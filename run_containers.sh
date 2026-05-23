@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Ensure HOSTNAME is exported so docker-compose can expand ${HOSTNAME} in
+# extra_hosts (needed by the visualizer service).
+export HOSTNAME="${HOSTNAME:-$(hostname)}"
+
 # Color definitions
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'

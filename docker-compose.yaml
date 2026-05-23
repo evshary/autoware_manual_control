@@ -17,6 +17,10 @@ services:
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
       - REMOTE_PASSWORD=o
       - USE_SIM_TIME=false
+    # TigerVNC inside the container needs to resolve the host's hostname; with
+    # network_mode: host the container inherits it but has no /etc/hosts entry.
+    extra_hosts:
+      - "${HOSTNAME:-localhost}:127.0.0.1"
 
   teleop:
     network_mode: host
