@@ -12,6 +12,7 @@
 #include "common/types.hpp"
 #include "core/telemetry.hpp"
 
+#include <chrono>
 #include <memory>
 #include <string>
 
@@ -45,6 +46,11 @@ public:
     // from ZenohInput
     j["active_client_id"] = input_.active_client_id();
     j["watchdog_tripped"] = input_.watchdog_tripped();
+    // Wall-clock ms at publish time — lets the UI compute one-way latency
+    // (Date.now() - timestamp) without an extra round-trip.
+    j["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(
+                         std::chrono::system_clock::now().time_since_epoch())
+                         .count();
     pub_->put(zenoh::Bytes(j.dump()));
   }
 
