@@ -15,6 +15,7 @@
 #include <autoware_adapi_v1_msgs/srv/change_operation_mode.hpp>
 #include <autoware_vehicle_msgs/msg/engage.hpp>
 #include <autoware_vehicle_msgs/msg/gear_report.hpp>
+#include <autoware_vehicle_msgs/msg/steering_report.hpp>
 #include <autoware_vehicle_msgs/msg/velocity_report.hpp>
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 
@@ -31,6 +32,7 @@ using autoware_vehicle_msgs::msg::GearCommand;
 using autoware_adapi_v1_msgs::msg::ManualOperatorHeartbeat;
 using autoware_vehicle_msgs::msg::Engage;
 using autoware_vehicle_msgs::msg::GearReport;
+using autoware_vehicle_msgs::msg::SteeringReport;
 using autoware_vehicle_msgs::msg::VelocityReport;
 using geometry_msgs::msg::PoseWithCovarianceStamped;
 
@@ -90,6 +92,9 @@ public:
     sub_gear_ = this->create_subscription<GearReport>(
         "/vehicle/status/gear_status", 10,
         std::bind(&ManualControlNode::onGear, this, _1));
+    sub_steering_ = this->create_subscription<SteeringReport>(
+        "/vehicle/status/steering_status", 1,
+        std::bind(&ManualControlNode::onSteering, this, _1));
 
     // REMOTE operator only: complete the standard Autoware engage handshake.
     // change_to_remote sets the target but does not engage; watch
@@ -121,6 +126,7 @@ public:
   VehicleState get_vehicle_state() const {
     VehicleState s;
     s.velocity = current_velocity_;
+    s.steer_angle = current_steer_angle_;
     // Map ROS gear to Enum
     switch (current_gear_type_) {
     case GearReport::PARK:
@@ -300,6 +306,9 @@ private:
   void onGear(const GearReport::ConstSharedPtr msg) {
     current_gear_type_ = msg->report;
   }
+  void onSteering(const SteeringReport::ConstSharedPtr msg) {
+    current_steer_angle_ = msg->steering_tire_angle;
+  }
 
   void onOperationModeState(const OperationModeState::ConstSharedPtr msg) {
     if (msg->mode != OperationModeState::REMOTE) return;
@@ -373,6 +382,7 @@ private:
   rclcpp::Subscription<Engage>::SharedPtr sub_engage_;
   rclcpp::Subscription<VelocityReport>::SharedPtr sub_velocity_;
   rclcpp::Subscription<GearReport>::SharedPtr sub_gear_;
+  rclcpp::Subscription<SteeringReport>::SharedPtr sub_steering_;
 
   // REMOTE only — completes the engage handshake (enable_autoware_control).
   rclcpp::Client<ChangeOperationMode>::SharedPtr enable_client_;
@@ -388,6 +398,7 @@ private:
   bool current_engage_ = false;
   uint8_t current_gear_type_ = GearReport::PARK;
   double current_velocity_ = 0.0;
+  double current_steer_angle_ = 0.0;
 
   std::vector<std::string> preset_names_;
   int current_preset_index_ = -1;
