@@ -56,6 +56,8 @@ inline PhysicsDriveMode::Params load_physics_params(rclcpp::Node &node) {
   p.accel_max = load_float(node, "physics.accel_max", p.accel_max);
   p.brake_max = load_float(node, "physics.brake_max", p.brake_max);
   p.coast_decel = load_float(node, "physics.coast_decel", p.coast_decel);
+  p.max_vel_offset =
+      load_float(node, "physics.max_vel_offset", p.max_vel_offset);
   return p;
 }
 

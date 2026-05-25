@@ -11,18 +11,21 @@ namespace autoware::manual_control {
 
 // Direct mapping: input -> desired acceleration -> integrate -> velocity
 // setpoint. The vehicle controller downstream owns velocity tracking; we do
-// not stack a second loop on top of it.
+// not stack a second loop on top of it. One anti-windup constraint guards
+// the setpoint against runaway when the downstream is feed-forward (no
+// tracker) — see the std::min() in update() below.
 class PhysicsDriveMode : public DriveMode {
 public:
   struct Params {
-    float max_speed = 27.78f;      // m/s (100 km/h)
-    float max_steer = 0.6f;        // rad
-    float steer_rate = 0.8f;       // rad/s while a steer key is held
-    float steer_decay = 1.0f;      // rad/s auto-center on release
-    float steer_deadzone = 0.01f;  // rad
-    float accel_max = 3.5f;        // m/s^2 at full throttle
-    float brake_max = 5.0f;        // m/s^2 at full brake
-    float coast_decel = 2.0f;      // m/s^2 with no input (engine braking)
+    float max_speed = 27.78f;       // m/s (100 km/h)
+    float max_steer = 0.6f;         // rad
+    float steer_rate = 0.8f;        // rad/s while a steer key is held
+    float steer_decay = 1.0f;       // rad/s auto-center on release
+    float steer_deadzone = 0.01f;   // rad
+    float accel_max = 3.5f;         // m/s^2 at full throttle
+    float brake_max = 5.0f;         // m/s^2 at full brake
+    float coast_decel = 2.0f;       // m/s^2 with no input (engine braking)
+    float max_vel_offset = 3.0f;    // m/s — setpoint may lead real by this much
   };
 
   explicit PhysicsDriveMode(const Params &params) : params_(params) {}
@@ -69,9 +72,16 @@ public:
       desired_accel = -params_.coast_decel;
     }
 
-    // Integrate to velocity setpoint, clamped to [0, max_speed].
-    desired_vel_ =
-        std::clamp(desired_vel_ + desired_accel * dt, 0.0f, params_.max_speed);
+    // Integrate to velocity setpoint, clamped to [0, max_speed]. The
+    // downstream raw_vehicle_cmd_converter is a feed-forward accel→throttle
+    // map with no velocity tracker, so without anti-windup desired_vel_
+    // would race past max_speed while real is still climbing; the cap below
+    // would then zero realized_accel and the converter's Y=0 row would turn
+    // into a brake — the historical 0→18→0 cycle.
+    desired_vel_ += desired_accel * dt;
+    desired_vel_ = std::min(desired_vel_,
+                            std::abs(vehicle_state.velocity) + params_.max_vel_offset);
+    desired_vel_ = std::clamp(desired_vel_, 0.0f, params_.max_speed);
 
     // Pass the operator's acceleration intent through, except cap positive
     // intent at the upper bound (otherwise the downstream controller pushes

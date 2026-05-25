@@ -23,6 +23,7 @@
       accel_max: 3.5              # m/s^2 at full throttle
       brake_max: 5.0              # m/s^2 at full brake
       coast_decel: 2.0            # m/s^2 with no input
+      max_vel_offset: 3.0         # m/s — setpoint anti-windup ceiling vs real
 
     # CruiseDriveMode
     cruise:
