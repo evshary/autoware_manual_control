@@ -11,6 +11,8 @@
 #include <tier4_external_api_msgs/srv/engage.hpp>
 
 #include <autoware_adapi_v1_msgs/msg/manual_operator_heartbeat.hpp>
+#include <autoware_adapi_v1_msgs/msg/operation_mode_state.hpp>
+#include <autoware_adapi_v1_msgs/srv/change_operation_mode.hpp>
 #include <autoware_vehicle_msgs/msg/engage.hpp>
 #include <autoware_vehicle_msgs/msg/gear_report.hpp>
 #include <autoware_vehicle_msgs/msg/velocity_report.hpp>
@@ -21,6 +23,8 @@ using std::placeholders::_1;
 
 using tier4_control_msgs::msg::GateMode;
 using EngageSrv = tier4_external_api_msgs::srv::Engage;
+using ChangeOperationMode = autoware_adapi_v1_msgs::srv::ChangeOperationMode;
+using OperationModeState = autoware_adapi_v1_msgs::msg::OperationModeState;
 using autoware_control_msgs::msg::Control;
 using autoware_vehicle_msgs::msg::GearCommand;
 
@@ -43,7 +47,8 @@ public:
       : Node("ManualControl",
              rclcpp::NodeOptions()
                  .allow_undeclared_parameters(true)
-                 .automatically_declare_parameters_from_overrides(true)) {
+                 .automatically_declare_parameters_from_overrides(true)),
+        role_(role) {
     // Publishers
     pub_gate_mode_ = this->create_publisher<GateMode>(
         "/control/gate_mode_cmd", rclcpp::QoS(1).transient_local());
@@ -85,6 +90,20 @@ public:
     sub_gear_ = this->create_subscription<GearReport>(
         "/vehicle/status/gear_status", 10,
         std::bind(&ManualControlNode::onGear, this, _1));
+
+    // REMOTE operator only: complete the standard Autoware engage handshake.
+    // change_to_remote sets the target but does not engage; watch
+    // operation_mode/state and call enable_autoware_control when the target
+    // is REMOTE but control isn't enabled yet, rate-limited to 2s.
+    if (role_ == OperatorRole::REMOTE) {
+      enable_client_ = this->create_client<ChangeOperationMode>(
+          "/api/operation_mode/enable_autoware_control");
+      rclcpp::QoS qos_state(1);
+      qos_state.transient_local().reliable();
+      sub_op_mode_ = this->create_subscription<OperationModeState>(
+          "/api/operation_mode/state", qos_state,
+          std::bind(&ManualControlNode::onOperationModeState, this, _1));
+    }
 
     init_parameters();
 
@@ -282,6 +301,36 @@ private:
     current_gear_type_ = msg->report;
   }
 
+  void onOperationModeState(const OperationModeState::ConstSharedPtr msg) {
+    if (msg->mode != OperationModeState::REMOTE) return;
+    if (msg->is_autoware_control_enabled) return;
+    if (msg->is_in_transition) return;
+
+    const auto now = std::chrono::steady_clock::now();
+    if (now - last_enable_attempt_ < std::chrono::seconds(2)) return;
+    last_enable_attempt_ = now;
+
+    if (!enable_client_ ||
+        !enable_client_->wait_for_service(std::chrono::milliseconds(100))) {
+      RCLCPP_WARN(this->get_logger(),
+          "enable_autoware_control: service not yet available");
+      return;
+    }
+    auto req = std::make_shared<ChangeOperationMode::Request>();
+    enable_client_->async_send_request(req,
+        [this](rclcpp::Client<ChangeOperationMode>::SharedFuture fut) {
+          auto res = fut.get();
+          if (res && res->status.success) {
+            RCLCPP_INFO(this->get_logger(),
+                "enable_autoware_control: success");
+          } else {
+            RCLCPP_WARN(this->get_logger(),
+                "enable_autoware_control: failed (%s)",
+                res ? res->status.message.c_str() : "null response");
+          }
+        });
+  }
+
   void monitor_state() {
     // 1. Handle Pending External Mode Request (Startup or user intent)
     if (pending_external_request_) {
@@ -311,6 +360,8 @@ private:
     }
   }
 
+  const OperatorRole role_;
+
   rclcpp::Publisher<GateMode>::SharedPtr pub_gate_mode_;
   rclcpp::Client<EngageSrv>::SharedPtr client_engage_;
   rclcpp::Publisher<Control>::SharedPtr pub_control_command_;
@@ -322,6 +373,12 @@ private:
   rclcpp::Subscription<Engage>::SharedPtr sub_engage_;
   rclcpp::Subscription<VelocityReport>::SharedPtr sub_velocity_;
   rclcpp::Subscription<GearReport>::SharedPtr sub_gear_;
+
+  // REMOTE only — completes the engage handshake (enable_autoware_control).
+  rclcpp::Client<ChangeOperationMode>::SharedPtr enable_client_;
+  rclcpp::Subscription<OperationModeState>::SharedPtr sub_op_mode_;
+  std::chrono::steady_clock::time_point last_enable_attempt_ =
+      std::chrono::steady_clock::now() - std::chrono::seconds(60);
 
   rclcpp::TimerBase::SharedPtr monitor_timer_;
   rclcpp::TimerBase::SharedPtr heartbeat_timer_; // REMOTE only
