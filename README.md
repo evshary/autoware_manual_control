@@ -50,22 +50,23 @@ docker run --rm -it --net=host \
 ## 🕹️ Operation Guide
 
 ### 1. Driving Checklist
-Follow this sequence to specific start driving:
+Follow this sequence to start driving:
 
-1.  **Set Initial Pose**: Press `R` to cycle through preset locations (e.g., origin) to initialize the vehicle on the map.
-2.  **Engage External Mode**: Press `Z` to switch `GateMode` to `External`.
-3.  **Shift Gear**: Press `X` for Drive (D) or `C` for Reverse (R).
-4.  **Select Drive Mode**: Press `M` to switch from the default `Stop` mode to `Physics` or `Cruise` mode.
-5.  **Drive**: Use `WASD` to control the vehicle.
+1.  **Configure** (optional): pick how this operator commands the vehicle with `operator_mode` (`local` or `remote`) and tune modes in `teleop_config.yaml` (see [Configuration](#️-configuration)).
+2.  **Set Initial Pose**: Press `R` to cycle through the preset locations and initialize the vehicle on the map.
+3.  **Engage**: Press `Z` to switch from `STOP` to your configured drive mode. Entering the drive mode **self-engages** (via the AD-API `enable_autoware_control`) — there is no separate engage step.
+4.  **Shift Gear**: Press `X` for Drive (D) or `C` for Reverse (R).
+5.  **Select Drive Mode**: Press `M` to cycle the active drive modes (the `modes:` list) — e.g. from `Physics` to `Cruise`.
+6.  **Drive**: Use `WASD` to control the vehicle.
 
 ### 2. Controls
-| Key       | Function             | Description                                                     |
-| :-------- | :------------------- | :-------------------------------------------------------------- |
-| **Z**     | Toggle Auto/External | Switches `GateMode`. Must be in `External` mode to control.     |
-| **M**     | Switch Mode          | Cycles between `Physics` -> `Cruise` -> `Stop` modes.           |
-| **R**     | Reset Pose           | Cycles through initial pose presets (defined in `param`).       |
-| **Space** | Emergency Stop       | Force stop with max braking (-10 m/s^2). Press again to resume. |
-| **Q**     | Quit                 | Exits the node.                                                 |
+| Key       | Function          | Description                                                          |
+| :-------- | :---------------- | :------------------------------------------------------------------- |
+| **Z**     | Toggle Drive      | Switches between `STOP` and the configured drive mode; self-engages on entry. |
+| **M**     | Switch Mode       | Cycles the active drive modes (the config `modes:` list).           |
+| **R**     | Reset Pose        | Cycles through the initial-pose presets (`init_pose.presets`).      |
+| **Space** | Emergency Stop    | Force stop with max braking. Press again to resume.                 |
+| **Q**     | Quit              | Exits the node.                                                     |
 
 #### Gear Selection
 *   **X**: Drive (D)
@@ -79,24 +80,41 @@ Follow this sequence to specific start driving:
 | **S**     | Brake (Linear Decel)            | **Tap**: -1 km/h <br> **Hold**: Smooth Decel |
 | **A / D** | Steer Left/Right (Auto-centers) | Steer Left/Right (**Angle Lock**)            |
 
+The status line shows the live operation mode, gear, real/target speed and steer. A `Keys: [....]` line echoes your WASD input (UPPERCASE = held, lowercase = tapped, `.` = idle).
+
 ### 3. Driving Modes
-*   **Physics Mode**: Simulates realistic inertia & friction. Steering has attack/decay limits.
-*   **Cruise Mode**: optimized for testing. `W`/`S` snaps speed by 1.0 km/h. Steering does not auto-center (Angle Lock).
-*   **Stop Mode**: Safety default. Max braking.
+Modes are config-selected plugins; the active set and cycle order come from the `modes:` list (which must include `stop`). The shipped modes are:
+
+*   **Physics Mode**: Simulates realistic inertia & friction. Steering has attack/decay limits and auto-centers on release.
+*   **Cruise Mode**: Optimized for testing. `W`/`S` snap the target speed by 1 km/h (tap) or ramp it (hold). Steering does not auto-center (Angle Lock).
+*   **Stop Mode**: The required initial and emergency-stop mode. Commands max braking.
+
+All per-mode tuning lives in the config (see below).
 
 ---
 
 ## ⚙️ Configuration
-The node behavior can be customized via `teleop_config.yaml`.
 
-### Auto-Engagement
+Behavior is customized via `teleop_config.yaml`; a fully-commented template ships as [`teleop_config.example.yaml`](teleop_config.example.yaml). Key parameters:
+
+| Parameter | Meaning |
+| :-------- | :------ |
+| `operator_mode` | The AD-API operation mode this operator commands: `local` or `remote`. |
+| `modes` | The active drive modes, in `M`-cycle order. Must include `stop`; an empty list, a missing `stop`, or an unknown name aborts startup with an explanatory error. |
+| `control_rate_hz`, `shift_stop_tolerance`, `shift_brake_accel` | Shared control-loop settings (loop rate, and the stop-wait-shift gear-change behavior). |
+| `physics:` / `cruise:` / `stop:` | Per-mode tuning blocks (speeds, accel/brake limits, steering rates, ...). Each mode reads its own block. |
+| `init_pose.presets` | Named poses (`[x, y, z, yaw]`) cycled by the `R` key. |
+
 ```yaml
 /ManualControl:
   ros__parameters:
-    start_as_external: true  # If true, automatically switches to External mode and engages on startup
+    operator_mode: remote          # or "local"
+    modes: ["stop", "physics", "cruise"]
+    control_rate_hz: 60.0
+    physics:
+      max_speed: 27.78
+      # ... see teleop_config.example.yaml for the full set
 ```
-*   **start_as_external**: Set to `true` to skip the manual `Z` toggle and immediately take control. Useful for headless setups.
-*   **init_pose**: Define preset locations for the `R` (Reset Pose) key.
 
 ---
 
@@ -131,16 +149,20 @@ colcon build
 
 ## 🏗️ Architecture
 
-This project has transitioned from a simple script to a professional **Component-Based Architecture**.
+A small, component-based design. The control loop is generic over two ports — an **intent source** (produces operator `Intent`) and a **telemetry sink** (consumes vehicle `Telemetry`) — so a transport can be swapped without touching the control or mode logic.
 
 ### Directory Structure
 ```bash
 src/
-├── core/       # Core Logic (ModeManager, Factory, Interfaces)
-├── modes/      # Concrete Drive Mode Implementations (Physics, Cruise, Stop)
-├── input/      # Input Handling (KeyboardReader, InputSystem)
-├── ui/         # User Interface (ConsoleUI)
-└── common/     # Shared Types and Constants
+├── common/      # Shared data: domain atoms (types.hpp) + the two port payloads (intent.hpp, telemetry.hpp)
+├── core/        # Control machinery: 60Hz loop (control_runtime), ModeManager, DriveMode interface + factory,
+│                #   the mode registry (register_modes), and generic ROS-param helpers (param_utils)
+├── modes/       # Drive-mode strategies (stop, physics, cruise)
+├── ros/         # ROS boundary: ManualControlNode (pubs/subs/services, AD-API operation mode)
+├── io/
+│   ├── intent/      # Input adapters  — KeyboardIntent: keys -> Intent (sole stdin reader)
+│   └── telemetry/   # Output adapters — ConsoleTelemetry: Telemetry -> terminal (sole stdout writer)
+└── keyboard_control.cpp   # Composition root (main): wires the adapters + modes into the loop
 ```
 
 ### Data Flow
@@ -148,101 +170,81 @@ src/
 ```mermaid
 sequenceDiagram
     participant User
-    participant InputSystem
+    participant KeyboardIntent
+    participant ControlRuntime
     participant ModeManager
-    participant ROSNode
-    participant UI
+    participant ManualControlNode
+    participant ConsoleTelemetry
 
     loop 60Hz Control Loop
-        User->>InputSystem: Key Press (WASD / M / Z)
-        InputSystem->>ModeManager: InputState (Normalized)
-        ROSNode->>ModeManager: VehicleState (Feedback)
-        
-        ModeManager->>ModeManager: Update Active DriveMode
-        Note over ModeManager: Computation: Physics dynamics / Cruise logic
-        
-        ModeManager->>ROSNode: ControlCommand (Velocity/Steer)
-        ROSNode->>ROSNode: Publish to Autoware
-        
-        ModeManager->>UI: Mode Status
-        ROSNode->>UI: Vehicle Telemetry
-        UI->>User: Render Dynamic HUD
+        User->>KeyboardIntent: Key Press (WASD / M / Z / ...)
+        KeyboardIntent->>ControlRuntime: Intent (decoded, transport-agnostic)
+        ManualControlNode->>ControlRuntime: VehicleState (feedback)
+        ControlRuntime->>ModeManager: update(dt, Intent, VehicleState)
+        ModeManager->>ControlRuntime: ControlCommand
+        ControlRuntime->>ManualControlNode: publish_command()
+        ControlRuntime->>ConsoleTelemetry: publish(Telemetry)
+        ConsoleTelemetry->>User: Render status + key echo
     end
 ```
 
 ### Class Structure
-We utilize a **Strategy Pattern** combined with a **Factory** to manage driving modes, allowing for runtime mode switching and easy extension of new control logic.
+A **Strategy Pattern** + **Factory** manage driving modes, allowing runtime switching and easy extension. The 60Hz loop `run_control_runtime` is templated on the two ports.
 
 ```mermaid
----
-config:
-  layout: elk
----
 classDiagram
-    %% Core Components
-    class ManualControlNode {
-        -InputSystem input_system_
-        -ModeManager mode_manager_
-        +timer_callback()
+    class run_control_runtime {
+        <<function template>>
+        IntentSource, TelemetrySink
     }
-
-    class InputSystem {
-        -KeyboardReader reader_
-        +update() InputState
+    class KeyboardIntent {
+        +update() Intent
+        +w_state()/a_state()/s_state()/d_state() KeyHold
     }
-
+    class ConsoleTelemetry {
+        +publish(Telemetry)
+        +set_extra_line(provider)
+    }
     class ModeManager {
-        -DriveMode* active_mode_
-        +update(dt, input, vehicle_state)
+        -DriveMode active_mode_
+        +update(dt, Intent, VehicleState)
         +getCommand() ControlCommand
-        +switchMode()
     }
-
     class DriveModeFactory {
-        +createMode(ModeType) DriveMode*
-        +instance()
+        +registerAvailable(name, creator)
+        +setActiveOrder(names)
+        +createMode(name) DriveMode
     }
-
-    %% Drive Modes Strategy
     class DriveMode {
         <<interface>>
-        +update(dt, input, state)* ControlCommand
-        +onEnter(state)
-        +onExit()
+        +update(dt, Intent, VehicleState)* ControlCommand
+        +onEnter(state) / onExit()
     }
+    class StopDriveMode
+    class PhysicsDriveMode
+    class CruiseDriveMode
 
-    %% Concrete Implementations
-    class PhysicsDriveMode {
-        -float current_speed_
-        -float current_steer_
-        +update()
-    }
-
-    class CruiseDriveMode {
-        -float target_speed_
-        -float steering_angle_
-        +update()
-    }
-
-    class StopDriveMode {
-        +update()
-    }
-
-    %% Relationships
-    ManualControlNode --> InputSystem : uses
-    ManualControlNode --> ModeManager : uses
-    ModeManager ..> DriveModeFactory : requests
-    ModeManager --> DriveMode : maintains
+    run_control_runtime --> KeyboardIntent : IntentSource
+    run_control_runtime --> ConsoleTelemetry : TelemetrySink
+    run_control_runtime --> ModeManager : drives
+    ModeManager ..> DriveModeFactory : createMode(name)
+    ModeManager --> DriveMode : holds active
+    DriveMode <|.. StopDriveMode
     DriveMode <|.. PhysicsDriveMode
     DriveMode <|.. CruiseDriveMode
-    DriveMode <|.. StopDriveMode
 ```
 
 ### How to add a new Drive Mode
-1.  **Inherit**: Create a new class inheriting from `DriveMode` (see `src/core/drive_mode.hpp`).
-2.  **Implement**: Implement `update()`, `onEnter()`, `onExit()`.
-3.  **Register**: In `keyboard_control.cpp` (or `main`), register the mode with the factory.
-4.  **Enumerate**: Add your new `ModeType` enum in `src/common/types.hpp`.
+The smallest worked example is [`src/modes/stop_mode.hpp`](src/modes/stop_mode.hpp) (~40 lines) — read it first; it shows the whole contract. To add a mode:
+
+1.  **Implement** `src/modes/<name>_mode.hpp`: a class inheriting `DriveMode` (`src/core/drive_mode.hpp`) that provides
+    *   `static constexpr const char *kName = "<name>";`
+    *   a `struct Params { ... };` plus `static Params loadParams(rclcpp::Node &node)` that reads its tuning from config (use the `load_param` / `load_float` / `load_double` helpers in `core/param_utils.hpp`),
+    *   a constructor taking `const Params &`, and the strategy method `ControlCommand update(float dt, const Intent &intent, const VehicleState &vehicle_state)` (optionally `onEnter` / `onExit` / `getStatusString`).
+2.  **Register** it: add one line `register_mode<YourDriveMode>(factory, node);` to `register_all_modes` in `src/core/register_modes.hpp`.
+3.  **Enable** it: add its `kName` to the `modes:` list in `teleop_config.yaml` (and a tuning block if it has params).
+
+That is the whole change — one mode file, one register line, one config entry. No enum, no factory edits, no loop changes.
 
 ### CI/CD Pipeline
 *   **Triggers**: Push to `main` or Tag `v*` -> Builds & Pushes to GHCR.
@@ -256,4 +258,3 @@ classDiagram
 If you encounter a "Global Status Error" in RViz or TF errors related to the map frame (`map` frame does not exist), it is likely that the `autoware_map` volume is empty.
 
 👉 **Solution**: Run the map setup command in the **Quick Start** section.
-
