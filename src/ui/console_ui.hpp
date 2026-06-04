@@ -63,6 +63,8 @@ public:
     }
 
     std::cout << "[" << t.mode << "] "
+              << "Op:" << (t.operation_mode.empty() ? "?" : t.operation_mode)
+              << " | "
               << "Gear: " << gear_display << " | ";
 
     // Real Speed & Set Speed (Command) & Steer
@@ -107,7 +109,7 @@ private:
     std::cout << "  [W] Throttle  [S] Brake               " << std::endl;
     std::cout << "  [A] Left      [D] Right               " << std::endl;
     std::cout << "----------------------------------------" << std::endl;
-    std::cout << "  [Z] Auto/Local (Toggle)               " << std::endl;
+    std::cout << "  [Z] Toggle STOP / drive mode          " << std::endl;
     std::cout << "  [X] Drive  [C] Reverse  [V] Park      " << std::endl;
     std::cout << "  [SPACE] Emergency Stop / Resume       " << std::endl;
     std::cout << "  [R] Reset Initial Pose                " << std::endl;

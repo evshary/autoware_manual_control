@@ -11,6 +11,7 @@ namespace autoware::manual_control {
 struct Telemetry {
   std::string mode;
   std::string mode_status;
+  std::string operation_mode; // live Autoware operation mode (for the console)
   VehicleState vehicle;   // measured
   ControlCommand command; // commanded this tick
   ShiftState shift_state = ShiftState::IDLE;

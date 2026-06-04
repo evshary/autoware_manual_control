@@ -1,6 +1,8 @@
 /ManualControl:
   ros__parameters:
-    start_as_external: false
+    # Operation mode this operator commands: "local" or "remote". STOP is the
+    # implicit idle/safe state; entering the drive mode self-engages.
+    operator_mode: remote
 
     init_pose:
       presets:

@@ -43,10 +43,6 @@ void run_control_runtime(std::shared_ptr<ManualControlNode> node,
                          const RuntimeConfig &cfg) {
   ModeManager mode_manager;
 
-  if (node->should_start_external()) {
-    node->force_external_mode();
-  }
-
   rclcpp::Rate rate(cfg.rate_hz);
   auto last_time = std::chrono::steady_clock::now();
 
@@ -68,7 +64,7 @@ void run_control_runtime(std::shared_ptr<ManualControlNode> node,
       running = false;
 
     if (input_state.toggle_auto) {
-      node->toggle_manual_control();
+      node->toggle_operation_mode();
     }
 
     if (input_state.reset_pose) {
@@ -134,6 +130,7 @@ void run_control_runtime(std::shared_ptr<ManualControlNode> node,
     t.shift_state = shift_state;
     t.pending_gear = pending_gear;
     t.info = node->get_info_message();
+    t.operation_mode = node->operationModeName();
     sink.publish(t);
 
     rclcpp::spin_some(node);

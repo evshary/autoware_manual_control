@@ -137,7 +137,7 @@ public:
     state.brake_hold = key_s_.is_holding_state();
     state.steer_dir = (a ? 1 : 0) + (d ? -1 : 0); // Left is +
 
-    // Drop held continuous inputs on auto/local toggle so the new mode
+    // Drop held continuous inputs on the operation-mode toggle so the new mode
     // starts from a fresh release.
     if (state.toggle_auto) {
       key_w_.reset();

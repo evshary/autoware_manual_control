@@ -1,6 +1,8 @@
 // Standalone keyboard teleop entry point.
 
+#include <chrono>
 #include <memory>
+#include <thread>
 
 #include <rclcpp/rclcpp.hpp>
 
@@ -25,6 +27,15 @@ int main(int argc, char *argv[]) {
   ui.init();
 
   RuntimeConfig cfg = RuntimeConfig::load(*node);
+
+  // Spin first so DDS discovers peers and the latched localization state lands.
+  for (int i = 0; i < 20 && rclcpp::ok(); ++i) {
+    rclcpp::spin_some(node);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+  if (!node->is_localized())
+    node->reset_initial_pose();
+
   run_control_runtime(node, input_system, ui, cfg);
 
   rclcpp::shutdown();
