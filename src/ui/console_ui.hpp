@@ -4,7 +4,7 @@
 
 #include "common/types.hpp"
 #include "core/drive_mode_factory.hpp"
-#include "core/telemetry.hpp"
+#include "common/telemetry.hpp"
 #include "input/input_system.hpp"
 #include <cmath>
 #include <iomanip>

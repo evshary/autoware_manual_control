@@ -1,6 +1,7 @@
 #ifndef TELEOP_MODE_MANAGER_HPP
 #define TELEOP_MODE_MANAGER_HPP
 
+#include "common/intent.hpp"
 #include "common/types.hpp"
 #include "core/drive_mode.hpp"
 #include "core/drive_mode_factory.hpp"
@@ -20,10 +21,10 @@ public:
 
   void reinit(const VehicleState &state) { switchMode(current_type_, state); }
 
-  void update(float dt, const InputState &input,
+  void update(float dt, const Intent &intent,
               const VehicleState &vehicle_state) {
 
-    if (input.emergency_stop) {
+    if (intent.emergency_stop) {
       if (current_type_ == "stop") {
         switchMode(previous_type_, vehicle_state);
       } else {
@@ -31,7 +32,7 @@ public:
       }
     }
 
-    if (input.switch_mode) {
+    if (intent.switch_mode) {
       const auto &modes = DriveModeFactory::instance().activeOrder();
       auto it = std::find(modes.begin(), modes.end(), current_type_);
       size_t index = (it != modes.end()) ? std::distance(modes.begin(), it) : 0;
@@ -42,7 +43,7 @@ public:
     if (!active_mode_)
       return;
 
-    last_cmd_ = active_mode_->update(dt, input, vehicle_state);
+    last_cmd_ = active_mode_->update(dt, intent, vehicle_state);
   }
 
   ControlCommand getCommand() const { return last_cmd_; }

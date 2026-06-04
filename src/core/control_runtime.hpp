@@ -1,12 +1,13 @@
 #ifndef TELEOP_CONTROL_RUNTIME_HPP
 #define TELEOP_CONTROL_RUNTIME_HPP
 
-// Shared 60Hz control loop, generic over an input source and a telemetry sink.
+// Shared 60Hz control loop, generic over an intent source and a telemetry sink.
 
+#include "common/intent.hpp"
+#include "common/telemetry.hpp"
 #include "common/types.hpp"
 #include "core/mode_manager.hpp"
 #include "core/param_utils.hpp"
-#include "core/telemetry.hpp"
 #include "ros/manual_control_node.hpp"
 
 #include <chrono>
@@ -22,7 +23,7 @@ struct RuntimeConfig {
   float shift_stop_tolerance = 0.05f; // m/s — speed below which a shift proceeds
   float shift_brake_accel = -10.0f;   // m/s^2 — override accel while shifting
 
-  // Loads its own params (mirrors a mode's loadParams).
+  // Loads its own params.
   static RuntimeConfig load(rclcpp::Node &node) {
     RuntimeConfig cfg;
     cfg.rate_hz = load_double(node, "control_rate_hz", cfg.rate_hz);
@@ -34,12 +35,12 @@ struct RuntimeConfig {
   }
 };
 
-// InputSource: InputState update(). TelemetrySink: void publish(Telemetry). On
-// stale input, update() returns a braking InputState (throttle 0, brake 1) so
-// the loop needs no special case.
-template <typename InputSource, typename TelemetrySink>
+// IntentSource: Intent update(). TelemetrySink: void publish(Telemetry). On
+// stale input, update() returns a braking Intent (throttle 0, brake 1) so the
+// loop needs no special case.
+template <typename IntentSource, typename TelemetrySink>
 void run_control_runtime(std::shared_ptr<ManualControlNode> node,
-                         InputSource &input, TelemetrySink &sink,
+                         IntentSource &source, TelemetrySink &sink,
                          const RuntimeConfig &cfg) {
   ModeManager mode_manager;
 
@@ -58,31 +59,31 @@ void run_control_runtime(std::shared_ptr<ManualControlNode> node,
     if (dt > 0.1f)
       dt = 0.1f;
 
-    InputState input_state = input.update();
+    Intent intent = source.update();
 
-    if (input_state.quit)
+    if (intent.quit)
       running = false;
 
-    if (input_state.toggle_auto) {
+    if (intent.toggle_auto) {
       node->toggle_operation_mode();
     }
 
-    if (input_state.reset_pose) {
+    if (intent.reset_pose) {
       node->reset_initial_pose();
     }
 
     VehicleState vehicle_state = node->get_vehicle_state();
 
     // Shift request: brake to a stop, shift, then resume (stop-wait-shift).
-    if (input_state.shift_drive && vehicle_state.gear != Gear::DRIVE) {
+    if (intent.shift_drive && vehicle_state.gear != Gear::DRIVE) {
       pending_gear = Gear::DRIVE;
       shift_state = ShiftState::STOPPING;
     }
-    if (input_state.shift_reverse && vehicle_state.gear != Gear::REVERSE) {
+    if (intent.shift_reverse && vehicle_state.gear != Gear::REVERSE) {
       pending_gear = Gear::REVERSE;
       shift_state = ShiftState::STOPPING;
     }
-    if (input_state.shift_park && vehicle_state.gear != Gear::PARK) {
+    if (intent.shift_park && vehicle_state.gear != Gear::PARK) {
       pending_gear = Gear::PARK;
       shift_state = ShiftState::STOPPING;
     }
@@ -113,7 +114,7 @@ void run_control_runtime(std::shared_ptr<ManualControlNode> node,
       }
     }
 
-    mode_manager.update(dt, input_state, vehicle_state);
+    mode_manager.update(dt, intent, vehicle_state);
     ControlCommand cmd = mode_manager.getCommand();
 
     if (override_control) {

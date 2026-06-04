@@ -22,7 +22,7 @@ public:
     return p;
   }
 
-  ControlCommand update(float /*dt*/, const InputState & /*input*/,
+  ControlCommand update(float /*dt*/, const Intent & /*intent*/,
                         const VehicleState & /*vehicle_state*/) override {
     ControlCommand cmd;
     cmd.velocity = 0.0f;

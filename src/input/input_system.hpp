@@ -1,7 +1,7 @@
 #ifndef TELEOP_INPUT_SYSTEM_HPP
 #define TELEOP_INPUT_SYSTEM_HPP
 
-#include "common/types.hpp"
+#include "common/intent.hpp"
 #include "input/keyboard_reader.hpp"
 #include <chrono>
 
@@ -58,8 +58,8 @@ class InputSystem {
 public:
   InputSystem() = default;
 
-  InputState update() {
-    InputState state;
+  Intent update() {
+    Intent state;
 
     // reset triggers
     state.switch_mode = false;

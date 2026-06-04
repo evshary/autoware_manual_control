@@ -52,7 +52,7 @@ public:
     last_gear_ = state.gear;
   }
 
-  ControlCommand update(float dt, const InputState &input,
+  ControlCommand update(float dt, const Intent &intent,
                         const VehicleState &vehicle_state) override {
     if (vehicle_state.gear != last_gear_) {
       target_speed_ = 0.0f;
@@ -60,8 +60,8 @@ public:
     }
 
     // Steering (no auto-centering: held angle persists).
-    if (input.steer_dir != 0) {
-      current_steer_ += input.steer_dir * params_.steer_rate * dt;
+    if (intent.steer_dir != 0) {
+      current_steer_ += intent.steer_dir * params_.steer_rate * dt;
     }
     current_steer_ =
         std::clamp(current_steer_, -params_.steer_limit, params_.steer_limit);
@@ -72,9 +72,9 @@ public:
       const float inc_per_s = params_.vel_inc_hold_kph_s / 3.6f;
       const float dec_per_s = params_.vel_dec_hold_kph_s / 3.6f;
 
-      bool throttle_active = (input.throttle > 0.0f);
+      bool throttle_active = (intent.throttle > 0.0f);
       if (throttle_active) {
-        if (input.throttle_hold) {
+        if (intent.throttle_hold) {
           target_speed_ += inc_per_s * dt;
         } else if (!last_throttle_press_) {
           float current_kph = target_speed_ * 3.6f;
@@ -83,9 +83,9 @@ public:
       }
       last_throttle_press_ = throttle_active;
 
-      bool brake_active = (input.brake > 0.0f);
+      bool brake_active = (intent.brake > 0.0f);
       if (brake_active) {
-        if (input.brake_hold) {
+        if (intent.brake_hold) {
           target_speed_ -= dec_per_s * dt;
         } else if (!last_brake_press_) {
           float current_kph = target_speed_ * 3.6f;

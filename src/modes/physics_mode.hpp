@@ -48,7 +48,7 @@ public:
     status_accel_ = 0.0f;
   }
 
-  ControlCommand update(float dt, const InputState &input,
+  ControlCommand update(float dt, const Intent &intent,
                         const VehicleState &vehicle_state) override {
     // Wipe the setpoint on gear change so speed isn't carried across a reverse.
     if (vehicle_state.gear != last_gear_) {
@@ -56,8 +56,8 @@ public:
       last_gear_ = vehicle_state.gear;
     }
 
-    if (input.steer_dir != 0) {
-      current_steer_ += input.steer_dir * params_.steer_rate * dt;
+    if (intent.steer_dir != 0) {
+      current_steer_ += intent.steer_dir * params_.steer_rate * dt;
     } else if (std::abs(current_steer_) > params_.steer_deadzone) {
       float step = params_.steer_decay * dt;
       if (current_steer_ > 0) {
@@ -72,10 +72,10 @@ public:
         std::clamp(current_steer_, -params_.max_steer, params_.max_steer);
 
     float desired_accel;
-    if (input.throttle > 0.0f) {
-      desired_accel = input.throttle * params_.accel_max;
-    } else if (input.brake > 0.0f) {
-      desired_accel = -input.brake * params_.brake_max;
+    if (intent.throttle > 0.0f) {
+      desired_accel = intent.throttle * params_.accel_max;
+    } else if (intent.brake > 0.0f) {
+      desired_accel = -intent.brake * params_.brake_max;
     } else {
       desired_accel = -params_.coast_decel;
     }
