@@ -113,14 +113,10 @@ private:
     std::cout << "  [R] Reset Initial Pose                " << std::endl;
 
     std::cout << "  [M] Switch Mode (";
-    auto modes = autoware::manual_control::DriveModeFactory::instance()
-                     .getAvailableModes();
+    const auto &modes =
+        autoware::manual_control::DriveModeFactory::instance().activeOrder();
     for (size_t i = 0; i < modes.size(); ++i) {
-      std::string modeName =
-          autoware::manual_control::DriveModeFactory::instance()
-              .createMode(modes[i])
-              ->getName();
-      std::cout << modeName;
+      std::cout << modes[i];
       if (i < modes.size() - 1)
         std::cout << "/";
     }

@@ -2,6 +2,7 @@
 #define TELEOP_MODES_PHYSICS_MODE_HPP
 
 #include "core/drive_mode.hpp"
+#include "core/param_utils.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -23,8 +24,22 @@ public:
     float max_vel_offset = 3.0f;    // m/s — setpoint may lead real by this much
   };
 
-  PhysicsDriveMode() : PhysicsDriveMode(Params{}) {}
   explicit PhysicsDriveMode(const Params &params) : params_(params) {}
+
+  static constexpr const char *kName = "physics";
+  static Params loadParams(rclcpp::Node &node) {
+    Params p;
+    p.max_speed = load_float(node, "physics.max_speed", p.max_speed);
+    p.max_steer = load_float(node, "physics.max_steer", p.max_steer);
+    p.steer_rate = load_float(node, "physics.steer_rate", p.steer_rate);
+    p.steer_decay = load_float(node, "physics.steer_decay", p.steer_decay);
+    p.steer_deadzone = load_float(node, "physics.steer_deadzone", p.steer_deadzone);
+    p.accel_max = load_float(node, "physics.accel_max", p.accel_max);
+    p.brake_max = load_float(node, "physics.brake_max", p.brake_max);
+    p.coast_decel = load_float(node, "physics.coast_decel", p.coast_decel);
+    p.max_vel_offset = load_float(node, "physics.max_vel_offset", p.max_vel_offset);
+    return p;
+  }
 
   void onEnter(const VehicleState &state) override {
     desired_vel_ = std::abs(state.velocity);

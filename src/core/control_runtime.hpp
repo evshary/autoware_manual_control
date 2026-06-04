@@ -5,6 +5,7 @@
 
 #include "common/types.hpp"
 #include "core/mode_manager.hpp"
+#include "core/param_utils.hpp"
 #include "core/telemetry.hpp"
 #include "ros/manual_control_node.hpp"
 
@@ -19,6 +20,18 @@ namespace autoware::manual_control {
 struct RuntimeConfig {
   double rate_hz = 60.0;
   float shift_stop_tolerance = 0.05f; // m/s — speed below which a shift proceeds
+  float shift_brake_accel = -10.0f;   // m/s^2 — override accel while shifting
+
+  // Loads its own params (mirrors a mode's loadParams).
+  static RuntimeConfig load(rclcpp::Node &node) {
+    RuntimeConfig cfg;
+    cfg.rate_hz = load_double(node, "control_rate_hz", cfg.rate_hz);
+    cfg.shift_stop_tolerance =
+        load_float(node, "shift_stop_tolerance", cfg.shift_stop_tolerance);
+    cfg.shift_brake_accel =
+        load_float(node, "shift_brake_accel", cfg.shift_brake_accel);
+    return cfg;
+  }
 };
 
 // InputSource: InputState update(). TelemetrySink: void publish(Telemetry). On
@@ -84,7 +97,7 @@ void run_control_runtime(std::shared_ptr<ManualControlNode> node,
     if (shift_state == ShiftState::STOPPING) {
       override_control = true;
       override_cmd.velocity = 0.0f;
-      override_cmd.acceleration = -10.0f;
+      override_cmd.acceleration = cfg.shift_brake_accel;
       override_cmd.steer_angle = vehicle_state.steer_angle;
 
       if (std::abs(vehicle_state.velocity) < cfg.shift_stop_tolerance) {
@@ -94,7 +107,7 @@ void run_control_runtime(std::shared_ptr<ManualControlNode> node,
     } else if (shift_state == ShiftState::SHIFTING) {
       override_control = true;
       override_cmd.velocity = 0.0f;
-      override_cmd.acceleration = -10.0f;
+      override_cmd.acceleration = cfg.shift_brake_accel;
       override_cmd.steer_angle = vehicle_state.steer_angle;
 
       if (vehicle_state.gear == pending_gear) {

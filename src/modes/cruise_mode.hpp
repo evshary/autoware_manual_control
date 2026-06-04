@@ -2,101 +2,104 @@
 #define TELEOP_MODES_CRUISE_MODE_HPP
 
 #include "core/drive_mode.hpp"
+#include "core/param_utils.hpp"
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 #include <string>
 
 namespace autoware::manual_control {
 
-// ==========================================
-// Cruise Mode: Setpoint based with Steering Lock
-// ==========================================
 class CruiseDriveMode : public DriveMode {
 public:
-  void onEnter(const VehicleState &current_state) override {
-    target_speed_ = std::abs(current_state.velocity);
+  struct Params {
+    float max_speed = 27.78f;          // m/s (100 km/h)
+    float steer_rate = 0.3f;           // rad/s
+    float steer_limit = 0.6f;          // rad
+    float vel_inc_hold_kph_s = 5.0f;   // km/h per second when holding throttle
+    float vel_dec_hold_kph_s = 10.0f;  // km/h per second when holding brake
+    float accel_p_gain = 3.0f;
+    float max_accel = 5.0f;
+    float min_accel = -10.0f;
+  };
 
-    // Safety clamp on entry
-    if (target_speed_ > MAX_SPEED)
-      target_speed_ = 0.0f;
+  explicit CruiseDriveMode(const Params &params) : params_(params) {}
 
-    // Reset if entering in Reverse (Safety)
-    if (current_state.gear == Gear::REVERSE) {
+  static constexpr const char *kName = "cruise";
+  static Params loadParams(rclcpp::Node &node) {
+    Params p;
+    p.max_speed = load_float(node, "cruise.max_speed", p.max_speed);
+    p.steer_rate = load_float(node, "cruise.steer_rate", p.steer_rate);
+    p.steer_limit = load_float(node, "cruise.steer_limit", p.steer_limit);
+    p.vel_inc_hold_kph_s = load_float(node, "cruise.vel_inc_hold_kph_s", p.vel_inc_hold_kph_s);
+    p.vel_dec_hold_kph_s = load_float(node, "cruise.vel_dec_hold_kph_s", p.vel_dec_hold_kph_s);
+    p.accel_p_gain = load_float(node, "cruise.accel_p_gain", p.accel_p_gain);
+    p.max_accel = load_float(node, "cruise.max_accel", p.max_accel);
+    p.min_accel = load_float(node, "cruise.min_accel", p.min_accel);
+    return p;
+  }
+
+  void onEnter(const VehicleState &state) override {
+    target_speed_ = std::abs(state.velocity);
+    if (target_speed_ > params_.max_speed) {
       target_speed_ = 0.0f;
     }
-
-    current_steer_ = current_state.steer_angle;
-
-    // Reset toggle states
+    if (state.gear == Gear::REVERSE) {
+      target_speed_ = 0.0f;
+    }
+    current_steer_ = state.steer_angle;
     last_throttle_press_ = false;
     last_brake_press_ = false;
-
-    // Initialize Gear Tracker
-    last_gear_ = current_state.gear;
+    last_gear_ = state.gear;
   }
 
   ControlCommand update(float dt, const InputState &input,
                         const VehicleState &vehicle_state) override {
-
-    // Safety: Reset Setpoint on ANY Gear Change
     if (vehicle_state.gear != last_gear_) {
       target_speed_ = 0.0f;
       last_gear_ = vehicle_state.gear;
     }
 
-    // 1. Steering (Lock Logic - No Auto-Centering)
+    // Steering (no auto-centering: held angle persists).
     if (input.steer_dir != 0) {
-      current_steer_ += input.steer_dir * STEER_RATE * dt;
+      current_steer_ += input.steer_dir * params_.steer_rate * dt;
     }
-    current_steer_ = std::clamp(current_steer_, -STEER_LIMIT, STEER_LIMIT);
+    current_steer_ =
+        std::clamp(current_steer_, -params_.steer_limit, params_.steer_limit);
 
-    // 2. Velocity (Setpoint) with Tap/Hold Logic
     if (vehicle_state.gear == Gear::PARK) {
       target_speed_ = 0.0f;
     } else {
-      // Throttle Logic
-      bool throttle_active = (input.throttle > 0);
+      const float inc_per_s = params_.vel_inc_hold_kph_s / 3.6f;
+      const float dec_per_s = params_.vel_dec_hold_kph_s / 3.6f;
+
+      bool throttle_active = (input.throttle > 0.0f);
       if (throttle_active) {
         if (input.throttle_hold) {
-          // Holding: Continuous increase
-          target_speed_ += VEL_INC_HOLD * dt;
-        } else {
-          // Tapping (Rising Edge): Snap to next integer km/h
-          if (!last_throttle_press_) {
-            float current_kph = target_speed_ * 3.6f;
-            float next_kph = std::floor(current_kph) + 1.0f;
-            target_speed_ = next_kph / 3.6f;
-          }
+          target_speed_ += inc_per_s * dt;
+        } else if (!last_throttle_press_) {
+          float current_kph = target_speed_ * 3.6f;
+          target_speed_ = (std::floor(current_kph) + 1.0f) / 3.6f;
         }
       }
       last_throttle_press_ = throttle_active;
 
-      // Brake Logic (Decrement)
-      bool brake_active = (input.brake > 0);
+      bool brake_active = (input.brake > 0.0f);
       if (brake_active) {
         if (input.brake_hold) {
-          // Holding: Continuous decrease
-          target_speed_ -= VEL_DEC_HOLD * dt;
-        } else {
-          // Tapping (Rising Edge): Snap to prev integer km/h
-          if (!last_brake_press_) {
-            float current_kph = target_speed_ * 3.6f;
-            float next_kph = std::ceil(current_kph) - 1.0f;
-            target_speed_ = next_kph / 3.6f;
-          }
+          target_speed_ -= dec_per_s * dt;
+        } else if (!last_brake_press_) {
+          float current_kph = target_speed_ * 3.6f;
+          target_speed_ = (std::ceil(current_kph) - 1.0f) / 3.6f;
         }
       }
       last_brake_press_ = brake_active;
     }
 
-    target_speed_ = std::clamp(target_speed_, 0.0f, MAX_SPEED);
+    target_speed_ = std::clamp(target_speed_, 0.0f, params_.max_speed);
 
-    // P-Control for Accel
     float real_speed = std::abs(vehicle_state.velocity);
-    float error = target_speed_ - real_speed;
-    float accel_cmd = error * ACCEL_P_GAIN;
-    accel_cmd = std::clamp(accel_cmd, MIN_ACCEL, MAX_ACCEL);
+    float accel_cmd = (target_speed_ - real_speed) * params_.accel_p_gain;
+    accel_cmd = std::clamp(accel_cmd, params_.min_accel, params_.max_accel);
 
     ControlCommand cmd;
     cmd.velocity = target_speed_;
@@ -106,26 +109,13 @@ public:
   }
 
   std::string getName() const override { return "CRUISE"; }
-  std::string getStatusString() const override {
-    return ""; // Standard UI shows Set speed
-  }
+  std::string getStatusString() const override { return ""; }
 
 private:
-  // Constants
-  static constexpr float MAX_SPEED = 27.78f;          // 100 km/h
-  static constexpr float STEER_RATE = 0.3f;           // rad/s
-  static constexpr float STEER_LIMIT = 0.6f;          // rad (~34 deg)
-  static constexpr float VEL_INC_HOLD = 5.0f / 3.6f;  // +5 km/h per sec
-  static constexpr float VEL_DEC_HOLD = 10.0f / 3.6f; // -10 km/h per sec
-  static constexpr float ACCEL_P_GAIN = 3.0f;
-  static constexpr float MAX_ACCEL = 5.0f;
-  static constexpr float MIN_ACCEL = -10.0f;
-
+  Params params_;
   float target_speed_ = 0.0f;
   float current_steer_ = 0.0f;
   Gear last_gear_ = Gear::PARK;
-
-  // Edge detection for Tap
   bool last_throttle_press_ = false;
   bool last_brake_press_ = false;
 };

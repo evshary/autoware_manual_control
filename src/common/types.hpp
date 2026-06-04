@@ -14,8 +14,6 @@ enum class Gear : uint8_t {
   LOW = 5
 };
 
-enum class ModeType { STOP, PHYSICS, CRUISE };
-
 // Shift Safety State
 enum class ShiftState { IDLE, STOPPING, SHIFTING };
 
