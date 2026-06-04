@@ -1,26 +1,28 @@
+#ifndef TELEOP_IO_TELEMETRY_CONSOLE_HPP
+#define TELEOP_IO_TELEMETRY_CONSOLE_HPP
 
-#ifndef TELEOP_CONSOLE_UI_HPP
-#define TELEOP_CONSOLE_UI_HPP
-
+#include "common/telemetry.hpp"
 #include "common/types.hpp"
 #include "core/drive_mode_factory.hpp"
-#include "common/telemetry.hpp"
-#include "input/input_system.hpp"
 #include <cmath>
+#include <functional>
 #include <iomanip>
 #include <iostream>
+#include <utility>
 
 namespace autoware::manual_control {
 
-// Keyboard TelemetrySink: renders Telemetry to the terminal. The key
-// highlight is read from the InputSystem injected at construction.
-class ConsoleUI {
+// Console TelemetrySink: renders Telemetry to the terminal; sole stdout writer.
+class ConsoleTelemetry {
 public:
-  explicit ConsoleUI(const InputSystem &input) : input(input) {}
-
   void init() {
     std::cout << "\033[2J\033[1;1H"; // Clear screen
     printHeader();
+  }
+
+  // Optional extra status line, rendered each tick; console stays agnostic to its content.
+  void set_extra_line(std::function<std::string()> provider) {
+    extra_line_ = std::move(provider);
   }
 
   void publish(const Telemetry &t) {
@@ -29,17 +31,13 @@ public:
     if (frame++ % 6 != 0)
       return;
 
-    std::cout
-        << "\033[u"; // Restore cursor to start of status line (below header)
-    std::cout << "\033[J"; // Clear everything below
+    std::cout << "\033[u";  // restore cursor
+    std::cout << "\033[J";  // clear below
 
-    // 1. Info Message (Persistent/Top)
     if (!t.info.empty()) {
       std::cout << t.info << "\n";
     }
 
-    // 2. Status Line
-    // Helper to stringify gear
     auto gearToString = [](Gear g) -> std::string {
       switch (g) {
       case Gear::PARK:
@@ -57,7 +55,6 @@ public:
 
     std::string gear_display = gearToString(t.vehicle.gear);
 
-    // If shifting, show transition
     if (t.shift_state != ShiftState::IDLE) {
       gear_display += "->" + gearToString(t.pending_gear);
     }
@@ -80,23 +77,9 @@ public:
       std::cout << " | " << t.mode_status;
     }
 
-    std::cout << " | "; // Separator for Keys
-
-    // Inputs (Visual: Upper=Hold, Lower=Active, .=None)
-    auto getKeyChar = [](bool active, bool holding, char c) -> char {
-      if (holding)
-        return c; // Uppercase
-      if (active)
-        return (char)(c + 32); // Lowercase
-      return '.';
-    };
-
-    std::cout << "[";
-    std::cout << getKeyChar(input.isActiveW(), input.isHoldingW(), 'W');
-    std::cout << getKeyChar(input.isActiveA(), input.isHoldingA(), 'A');
-    std::cout << getKeyChar(input.isActiveS(), input.isHoldingS(), 'S');
-    std::cout << getKeyChar(input.isActiveD(), input.isHoldingD(), 'D');
-    std::cout << "]";
+    if (extra_line_) {
+      std::cout << "\n" << extra_line_();
+    }
 
     std::cout << std::flush;
   }
@@ -115,8 +98,7 @@ private:
     std::cout << "  [R] Reset Initial Pose                " << std::endl;
 
     std::cout << "  [M] Switch Mode (";
-    const auto &modes =
-        autoware::manual_control::DriveModeFactory::instance().activeOrder();
+    const auto &modes = DriveModeFactory::instance().activeOrder();
     for (size_t i = 0; i < modes.size(); ++i) {
       std::cout << modes[i];
       if (i < modes.size() - 1)
@@ -129,9 +111,9 @@ private:
     std::cout << "\033[s"; // Save Cursor Position
   }
 
-  const InputSystem &input;
+  std::function<std::string()> extra_line_;
 };
 
 } // namespace autoware::manual_control
 
-#endif // TELEOP_CONSOLE_UI_HPP
+#endif // TELEOP_IO_TELEMETRY_CONSOLE_HPP
