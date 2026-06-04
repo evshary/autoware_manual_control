@@ -9,106 +9,79 @@
 
 namespace autoware::manual_control {
 
-// ==========================================
-// Physics Mode: Inertia-based control
-// ==========================================
 class PhysicsDriveMode : public DriveMode {
 public:
-  void onEnter(const VehicleState &current_state) override {
-    // Always start with absolute speed concept
-    current_vel_ = std::abs(current_state.velocity); // seamless handover
-    current_steer_ = current_state.steer_angle;
-    current_accel_ = 0.0f;
-    current_accel_rate_ = 0.0f;
-    last_gear_ = current_state.gear;
+  struct Params {
+    float max_speed = 27.78f;       // m/s (100 km/h)
+    float max_steer = 0.6f;         // rad
+    float steer_rate = 0.8f;        // rad/s while a steer key is held
+    float steer_decay = 1.0f;       // rad/s auto-center on release
+    float steer_deadzone = 0.01f;   // rad
+    float accel_max = 3.5f;         // m/s^2 at full throttle
+    float brake_max = 5.0f;         // m/s^2 at full brake
+    float coast_decel = 2.0f;       // m/s^2 with no input (engine braking)
+    float max_vel_offset = 3.0f;    // m/s — setpoint may lead real by this much
+  };
+
+  PhysicsDriveMode() : PhysicsDriveMode(Params{}) {}
+  explicit PhysicsDriveMode(const Params &params) : params_(params) {}
+
+  void onEnter(const VehicleState &state) override {
+    desired_vel_ = std::abs(state.velocity);
+    current_steer_ = state.steer_angle;
+    last_gear_ = state.gear;
+    status_accel_ = 0.0f;
   }
 
   ControlCommand update(float dt, const InputState &input,
                         const VehicleState &vehicle_state) override {
-
-    // Safety: Reset State on Gear Change
+    // Wipe the setpoint on gear change so speed isn't carried across a reverse.
     if (vehicle_state.gear != last_gear_) {
-      current_vel_ = 0.0f;
-      current_accel_ = 0.0f;
-      current_accel_rate_ = 0.0f;
+      desired_vel_ = 0.0f;
       last_gear_ = vehicle_state.gear;
     }
 
-    // 1. Steering Physics (Attack/Decay)
     if (input.steer_dir != 0) {
-      current_steer_ += input.steer_dir * params_.steer_attack * dt;
-    } else {
-      // Auto-center
-      if (current_steer_ > params_.steer_deadzone) {
-        current_steer_ -= params_.steer_decay * dt;
-        if (current_steer_ < 0)
-          current_steer_ = 0;
-      } else if (current_steer_ < -params_.steer_deadzone) {
-        current_steer_ += params_.steer_decay * dt;
-        if (current_steer_ > 0)
-          current_steer_ = 0;
+      current_steer_ += input.steer_dir * params_.steer_rate * dt;
+    } else if (std::abs(current_steer_) > params_.steer_deadzone) {
+      float step = params_.steer_decay * dt;
+      if (current_steer_ > 0) {
+        current_steer_ = std::max(0.0f, current_steer_ - step);
       } else {
-        current_steer_ = 0;
+        current_steer_ = std::min(0.0f, current_steer_ + step);
       }
+    } else {
+      current_steer_ = 0.0f;
     }
     current_steer_ =
         std::clamp(current_steer_, -params_.max_steer, params_.max_steer);
 
-    // 2. Velocity Physics (Magnitude Based)
-    float real_speed_mag = std::abs(vehicle_state.velocity);
-
-    // Acceleration Ramp
-    if (input.throttle > 0) {
-      current_accel_rate_ = std::min(current_accel_rate_ + 1.0f, 9.0f);
+    float desired_accel;
+    if (input.throttle > 0.0f) {
+      desired_accel = input.throttle * params_.accel_max;
+    } else if (input.brake > 0.0f) {
+      desired_accel = -input.brake * params_.brake_max;
     } else {
-      current_accel_rate_ = 0.0f;
-      // Anti-ghosting: Check if Target (Magnitude) >> Real (Magnitude)
-      // If we are commanding 5.0, but real is 0.0, and throttle released ->
-      // snap
-      if (current_vel_ > real_speed_mag + 2.0f) {
-        current_vel_ = real_speed_mag + 0.5f;
-      }
+      desired_accel = -params_.coast_decel;
     }
 
-    // Apply Acceleration (Increase Magnitude)
-    current_vel_ += (input.throttle > 0 ? current_accel_rate_ : 0.0f) * dt;
+    // Bound the setpoint to real speed so it can't wind up arbitrarily far off.
+    desired_vel_ += desired_accel * dt;
+    desired_vel_ = std::min(desired_vel_,
+                            std::abs(vehicle_state.velocity) + params_.max_vel_offset);
+    desired_vel_ = std::clamp(desired_vel_, 0.0f, params_.max_speed);
 
-    // Apply Braking (Decrease Magnitude)
-    if (input.brake > 0) {
-      // Linear decrease
-      if (current_vel_ > 0) {
-        current_vel_ -= params_.brake_rate * dt;
-        if (current_vel_ < 0)
-          current_vel_ = 0;
-      }
-    }
-
-    // Apply Friction (Decrease Magnitude)
-    float friction = params_.friction_rate;
-    if (vehicle_state.gear == Gear::PARK)
-      friction = 10.0f;
-
-    if (current_vel_ > 0) {
-      current_vel_ -= friction * dt;
-      if (current_vel_ < 0)
-        current_vel_ = 0;
-    }
-
-    current_vel_ = std::clamp(current_vel_, 0.0f, params_.max_speed);
-
-    // Calculate Acceleration Command (Derivative)
-    // Calculated based on speed magnitude to prevent sign flip instability
-    // during direction changes
-    float accel_cmd = 0.0f;
-    if (dt > 1e-4) {
-      accel_cmd = (current_vel_ - real_speed_mag) / dt;
+    // Drop only positive intent at max_speed; keep negative so braking holds.
+    float realized_accel = desired_accel;
+    if (desired_vel_ >= params_.max_speed && realized_accel > 0.0f) {
+      realized_accel = 0.0f;
     }
 
     ControlCommand cmd;
-    cmd.velocity = current_vel_;
-    cmd.acceleration = accel_cmd;
+    cmd.velocity = desired_vel_;
+    cmd.acceleration = realized_accel;
     cmd.steer_angle = current_steer_;
-
+    status_accel_ = realized_accel;
     return cmd;
   }
 
@@ -116,27 +89,16 @@ public:
 
   std::string getStatusString() const override {
     char buf[64];
-    snprintf(buf, sizeof(buf), "Acc: %.2f m/s2", current_accel_);
+    std::snprintf(buf, sizeof(buf), "Acc: %.2f m/s2", status_accel_);
     return std::string(buf);
   }
 
 private:
-  // We track Magnitude (Speed) here, assumed positive
-  float current_vel_ = 0.0f;
+  Params params_;
+  float desired_vel_ = 0.0f;
   float current_steer_ = 0.0f;
-  float current_accel_ = 0.0f;
-  float current_accel_rate_ = 0.0f;
+  float status_accel_ = 0.0f;
   Gear last_gear_ = Gear::PARK;
-
-  struct Params {
-    float max_speed = 27.78f;
-    float max_steer = 0.6f;
-    float steer_attack = 0.8f;
-    float steer_decay = 1.0f;
-    float steer_deadzone = 0.01f;
-    float brake_rate = 10.0f;
-    float friction_rate = 3.0f;
-  } params_;
 };
 
 } // namespace autoware::manual_control
