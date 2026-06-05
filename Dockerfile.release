@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y \
     git \
     python3-colcon-common-extensions \
     ros-humble-rmw-cyclonedds-cpp \
+    ros-humble-geographic-msgs \
     && rm -rf /var/lib/apt/lists/*
 
 # Setup workspace
@@ -42,6 +43,7 @@ COPY --from=autoware_source /opt/autoware /opt/autoware
 # Note: We need some runtime tools and same RMW implementation
 RUN apt-get update && apt-get install -y \
     ros-humble-rmw-cyclonedds-cpp \
+    ros-humble-geographic-msgs \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 

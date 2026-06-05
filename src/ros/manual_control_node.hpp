@@ -7,10 +7,11 @@
 
 #include <autoware_control_msgs/msg/control.hpp>
 #include <autoware_vehicle_msgs/msg/gear_command.hpp>
-#include <tier4_control_msgs/msg/gate_mode.hpp>
-#include <tier4_external_api_msgs/srv/engage.hpp>
 
-#include <autoware_vehicle_msgs/msg/engage.hpp>
+#include <autoware_adapi_v1_msgs/msg/localization_initialization_state.hpp>
+#include <autoware_adapi_v1_msgs/msg/manual_operator_heartbeat.hpp>
+#include <autoware_adapi_v1_msgs/msg/operation_mode_state.hpp>
+#include <autoware_adapi_v1_msgs/srv/change_operation_mode.hpp>
 #include <autoware_vehicle_msgs/msg/gear_report.hpp>
 #include <autoware_vehicle_msgs/msg/steering_report.hpp>
 #include <autoware_vehicle_msgs/msg/velocity_report.hpp>
@@ -19,12 +20,14 @@
 using namespace std::chrono_literals;
 using std::placeholders::_1;
 
-using tier4_control_msgs::msg::GateMode;
-using EngageSrv = tier4_external_api_msgs::srv::Engage;
+using ChangeOperationMode = autoware_adapi_v1_msgs::srv::ChangeOperationMode;
+using OperationModeState = autoware_adapi_v1_msgs::msg::OperationModeState;
+using LocalizationInitializationState =
+    autoware_adapi_v1_msgs::msg::LocalizationInitializationState;
 using autoware_control_msgs::msg::Control;
 using autoware_vehicle_msgs::msg::GearCommand;
 
-using autoware_vehicle_msgs::msg::Engage;
+using autoware_adapi_v1_msgs::msg::ManualOperatorHeartbeat;
 using autoware_vehicle_msgs::msg::GearReport;
 using autoware_vehicle_msgs::msg::SteeringReport;
 using autoware_vehicle_msgs::msg::VelocityReport;
@@ -32,6 +35,8 @@ using geometry_msgs::msg::PoseWithCovarianceStamped;
 
 namespace autoware::manual_control {
 
+// Commands go to /external/selected/control_cmd, the gate input both LOCAL and
+// REMOTE forward, so one publish path drives in either AD-API operation mode.
 class ManualControlNode : public rclcpp::Node {
 public:
   ManualControlNode()
@@ -39,26 +44,40 @@ public:
              rclcpp::NodeOptions()
                  .allow_undeclared_parameters(true)
                  .automatically_declare_parameters_from_overrides(true)) {
-    // Publishers
-    pub_gate_mode_ = this->create_publisher<GateMode>(
-        "/control/gate_mode_cmd", rclcpp::QoS(1).transient_local());
-    client_engage_ = this->create_client<EngageSrv>(
-        "/api/autoware/set/engage", rmw_qos_profile_services_default);
+    // Drive mode this operator commands (local | remote); STOP is the idle state.
+    std::string mode_str;
+    this->get_parameter_or<std::string>("operator_mode", mode_str, "remote");
+    operator_mode_ = parse_operator_mode(mode_str);
 
     pub_control_command_ = this->create_publisher<Control>(
-        "/control/command/control_cmd", rclcpp::QoS(1).transient_local());
+        "/external/selected/control_cmd", rclcpp::QoS(1).transient_local());
     pub_gear_cmd_ =
         this->create_publisher<GearCommand>("/external/selected/gear_cmd", 1);
     pub_initialpose_ = this->create_publisher<PoseWithCovarianceStamped>(
         "/initialpose", rclcpp::QoS(1));
 
-    // Subscribers
-    sub_gate_mode_ = this->create_subscription<GateMode>(
-        "/control/current_gate_mode", 10,
-        std::bind(&ManualControlNode::onGateMode, this, _1));
-    sub_engage_ = this->create_subscription<Engage>(
-        "/api/autoware/get/engage", 10,
-        std::bind(&ManualControlNode::onEngageStatus, this, _1));
+    // Heartbeat the operator's mode so Autoware keeps it available.
+    pub_heartbeat_ = this->create_publisher<ManualOperatorHeartbeat>(
+        operator_mode_ == OperationModeState::LOCAL ? "/external/local/heartbeat"
+                                                    : "/external/remote/heartbeat",
+        1);
+    heartbeat_timer_ = this->create_wall_timer(100ms, [this]() {
+      ManualOperatorHeartbeat msg;
+      msg.stamp = this->get_clock()->now();
+      msg.ready = true;
+      pub_heartbeat_->publish(msg);
+    });
+
+    cli_stop_ = this->create_client<ChangeOperationMode>(
+        "/api/operation_mode/change_to_stop");
+    cli_drive_ = this->create_client<ChangeOperationMode>(
+        operator_mode_ == OperationModeState::LOCAL
+            ? "/api/operation_mode/change_to_local"
+            : "/api/operation_mode/change_to_remote");
+    // Entering the drive mode self-engages via this service; no separate engage step.
+    cli_enable_control_ = this->create_client<ChangeOperationMode>(
+        "/api/operation_mode/enable_autoware_control");
+
     sub_velocity_ = this->create_subscription<VelocityReport>(
         "/vehicle/status/velocity_status", 1,
         std::bind(&ManualControlNode::onVelocity, this, _1));
@@ -69,24 +88,41 @@ public:
         "/vehicle/status/steering_status", 1,
         std::bind(&ManualControlNode::onSteering, this, _1));
 
+    rclcpp::QoS qos_state(1);
+    qos_state.transient_local().reliable();
+    sub_op_mode_ = this->create_subscription<OperationModeState>(
+        "/api/operation_mode/state", qos_state,
+        std::bind(&ManualControlNode::onOperationModeState, this, _1));
+    sub_loc_state_ = this->create_subscription<LocalizationInitializationState>(
+        "/api/localization/initialization_state", qos_state,
+        [this](const LocalizationInitializationState::ConstSharedPtr msg) {
+          loc_initialized_ =
+              (msg->state == LocalizationInitializationState::INITIALIZED);
+        });
+
     init_parameters();
-
-    // Timer for state monitoring (Auto-Engage / Auto-Mode-Switch)
-    monitor_timer_ = this->create_wall_timer(
-        1s, std::bind(&ManualControlNode::monitor_state, this));
-
-    if (should_start_external()) {
-      pending_external_request_ = true;
-    }
   }
 
-  // --- API for Main Loop ---
+  std::string operationModeName() const { return mode_name(current_op_mode_); }
+
+  // Re-publishing /initialpose re-jumps the vehicle, so skip if already localised.
+  bool is_localized() const { return loc_initialized_; }
+
+  // Toggle between STOP and the operator's drive mode (entering drive self-engages).
+  void toggle_operation_mode() {
+    if (current_op_mode_ == operator_mode_) {
+      request_operation_mode(OperationModeState::STOP);
+    } else if (avail_drive_) {
+      request_operation_mode(operator_mode_);
+    } else {
+      set_info_message(mode_name(operator_mode_) + " mode unavailable");
+    }
+  }
 
   VehicleState get_vehicle_state() const {
     VehicleState s;
     s.velocity = current_velocity_;
     s.steer_angle = current_steer_angle_;
-    // Map ROS gear to Enum
     switch (current_gear_type_) {
     case GearReport::PARK:
       s.gear = Gear::PARK;
@@ -104,7 +140,7 @@ public:
       s.gear = Gear::NONE;
       break;
     }
-    s.is_engaged = current_engage_;
+    s.is_engaged = control_enabled_;
     return s;
   }
 
@@ -141,54 +177,7 @@ public:
     pub_gear_cmd_->publish(msg);
   }
 
-  bool toggle_manual_control() {
-    bool switch_to_external = (gate_mode_ != GateMode::EXTERNAL);
-    if (gate_mode_ == GateMode::EXTERNAL) {
-      pub_gate_mode_->publish(
-          tier4_control_msgs::build<GateMode>().data(GateMode::AUTO));
-    } else {
-      pub_gate_mode_->publish(
-          tier4_control_msgs::build<GateMode>().data(GateMode::EXTERNAL));
-      auto req = std::make_shared<EngageSrv::Request>();
-      req->engage = true;
-      if (client_engage_->service_is_ready()) {
-        client_engage_->async_send_request(req);
-      }
-    }
-    return switch_to_external;
-  }
-
   void set_target_gear(Gear gear) { target_gear_ = gear; }
-
-  void force_external_mode() {
-    pending_external_request_ = true;
-    gate_mode_ = GateMode::EXTERNAL; // Optimistic update
-
-    // Sync gear to avoid resetting to PARK
-    switch (current_gear_type_) {
-    case GearReport::DRIVE:
-      target_gear_ = Gear::DRIVE;
-      break;
-    case GearReport::REVERSE:
-      target_gear_ = Gear::REVERSE;
-      break;
-    case GearReport::LOW:
-      target_gear_ = Gear::LOW;
-      break;
-    case GearReport::PARK:
-    default:
-      target_gear_ = Gear::PARK;
-      break;
-    }
-
-    pub_gate_mode_->publish(
-        tier4_control_msgs::build<GateMode>().data(GateMode::EXTERNAL));
-    auto req = std::make_shared<EngageSrv::Request>();
-    req->engage = true;
-    if (client_engage_->service_is_ready()) {
-      client_engage_->async_send_request(req);
-    }
-  }
 
   void reset_initial_pose() {
     if (preset_names_.empty())
@@ -225,10 +214,6 @@ public:
     set_info_message("[ManualControl]: Preset: " + current_name);
   }
 
-  bool should_start_external() const {
-    return this->get_parameter("start_as_external").as_bool();
-  }
-
   std::string get_info_message() { return info_message_; }
 
   void set_info_message(const std::string &msg) {
@@ -237,10 +222,46 @@ public:
   }
 
 private:
-  void init_parameters() {
-    if (!this->has_parameter("start_as_external")) {
-      this->declare_parameter("start_as_external", false);
+  static uint8_t parse_operator_mode(const std::string &s) {
+    return s == "local" ? OperationModeState::LOCAL : OperationModeState::REMOTE;
+  }
+
+  static std::string mode_name(uint8_t mode) {
+    switch (mode) {
+    case OperationModeState::STOP:
+      return "STOP";
+    case OperationModeState::AUTONOMOUS:
+      return "AUTONOMOUS";
+    case OperationModeState::LOCAL:
+      return "LOCAL";
+    case OperationModeState::REMOTE:
+      return "REMOTE";
+    default:
+      return "UNKNOWN";
     }
+  }
+
+  // One request per call, never a retry loop; outcome shown on the info line.
+  void request_operation_mode(uint8_t mode) {
+    auto client = (mode == OperationModeState::STOP) ? cli_stop_ : cli_drive_;
+    const std::string name = mode_name(mode);
+    if (!client || !client->service_is_ready()) {
+      set_info_message("Operation mode " + name + ": service unavailable");
+      return;
+    }
+    auto req = std::make_shared<ChangeOperationMode::Request>();
+    client->async_send_request(
+        req, [this, name](rclcpp::Client<ChangeOperationMode>::SharedFuture fut) {
+          auto res = fut.get();
+          if (res && res->status.success)
+            set_info_message("Operation mode -> " + name);
+          else
+            set_info_message("Operation mode " + name + " failed: " +
+                             (res ? res->status.message : "no response"));
+        });
+  }
+
+  void init_parameters() {
     if (!this->has_parameter("init_pose.presets.names")) {
       this->declare_parameter("init_pose.presets.names",
                               std::vector<std::string>{"origin"});
@@ -253,12 +274,6 @@ private:
         this->get_parameter("init_pose.presets.names").as_string_array();
   }
 
-  void onGateMode(const GateMode::ConstSharedPtr msg) {
-    gate_mode_ = msg->data;
-  }
-  void onEngageStatus(const Engage::ConstSharedPtr msg) {
-    current_engage_ = msg->engage;
-  }
   void onVelocity(const VelocityReport::ConstSharedPtr msg) {
     current_velocity_ = msg->longitudinal_velocity;
   }
@@ -269,52 +284,52 @@ private:
     current_steer_angle_ = msg->steering_tire_angle;
   }
 
-  void monitor_state() {
-    // 1. Handle Pending External Mode Request (Startup or user intent)
-    if (pending_external_request_) {
-      if (gate_mode_ != GateMode::EXTERNAL) {
-        // Retry publishing External Mode
-        pub_gate_mode_->publish(
-            tier4_control_msgs::build<GateMode>().data(GateMode::EXTERNAL));
+  void onOperationModeState(const OperationModeState::ConstSharedPtr msg) {
+    current_op_mode_ = msg->mode;
+    avail_drive_ = (operator_mode_ == OperationModeState::LOCAL)
+                       ? msg->is_local_mode_available
+                       : msg->is_remote_mode_available;
+    control_enabled_ = msg->is_autoware_control_enabled;
 
-        // Also queue engage
-        auto req = std::make_shared<EngageSrv::Request>();
-        req->engage = true;
-        if (client_engage_->service_is_ready()) {
-          client_engage_->async_send_request(req);
-        }
-      } else {
-        // We achieved External Mode
-        pending_external_request_ = false;
-      }
-    }
-
-    // 2. Maintain Engage State (if we are in External)
-    if (gate_mode_ == GateMode::EXTERNAL && !current_engage_) {
-      auto req = std::make_shared<EngageSrv::Request>();
-      req->engage = true;
-      if (client_engage_->service_is_ready())
-        client_engage_->async_send_request(req);
-    }
+    // Self-engage once in the drive mode but control is not yet enabled.
+    if (msg->mode == operator_mode_ && !msg->is_in_transition && !control_enabled_)
+      enable_autoware_control();
   }
 
-  rclcpp::Publisher<GateMode>::SharedPtr pub_gate_mode_;
-  rclcpp::Client<EngageSrv>::SharedPtr client_engage_;
+  void enable_autoware_control() {
+    auto now = std::chrono::steady_clock::now();
+    if (now - last_enable_request_ < 1s)
+      return;
+    if (!cli_enable_control_ || !cli_enable_control_->service_is_ready())
+      return;
+    last_enable_request_ = now;
+    auto req = std::make_shared<ChangeOperationMode::Request>();
+    cli_enable_control_->async_send_request(req);
+  }
+
   rclcpp::Publisher<Control>::SharedPtr pub_control_command_;
   rclcpp::Publisher<GearCommand>::SharedPtr pub_gear_cmd_;
   rclcpp::Publisher<PoseWithCovarianceStamped>::SharedPtr pub_initialpose_;
+  rclcpp::Publisher<ManualOperatorHeartbeat>::SharedPtr pub_heartbeat_;
 
-  rclcpp::Subscription<GateMode>::SharedPtr sub_gate_mode_;
-  rclcpp::Subscription<Engage>::SharedPtr sub_engage_;
   rclcpp::Subscription<VelocityReport>::SharedPtr sub_velocity_;
   rclcpp::Subscription<GearReport>::SharedPtr sub_gear_;
   rclcpp::Subscription<SteeringReport>::SharedPtr sub_steering_;
 
-  rclcpp::TimerBase::SharedPtr monitor_timer_;
+  rclcpp::Client<ChangeOperationMode>::SharedPtr cli_stop_;
+  rclcpp::Client<ChangeOperationMode>::SharedPtr cli_drive_;
+  rclcpp::Client<ChangeOperationMode>::SharedPtr cli_enable_control_;
+  rclcpp::Subscription<OperationModeState>::SharedPtr sub_op_mode_;
+  rclcpp::Subscription<LocalizationInitializationState>::SharedPtr sub_loc_state_;
+  bool loc_initialized_ = false;
+  uint8_t current_op_mode_ = OperationModeState::UNKNOWN;
+  bool avail_drive_ = false;
+  uint8_t operator_mode_ = OperationModeState::REMOTE;
+  bool control_enabled_ = false;
+  std::chrono::steady_clock::time_point last_enable_request_;
 
-  // Internal State cache
-  uint8_t gate_mode_ = GateMode::AUTO;
-  bool current_engage_ = false;
+  rclcpp::TimerBase::SharedPtr heartbeat_timer_;
+
   uint8_t current_gear_type_ = GearReport::PARK;
   double current_velocity_ = 0.0;
   double current_steer_angle_ = 0.0;
@@ -326,8 +341,6 @@ private:
 
   std::string info_message_;
   std::chrono::steady_clock::time_point info_message_time_;
-
-  bool pending_external_request_ = false;
 };
 
 } // namespace autoware::manual_control

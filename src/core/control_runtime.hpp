@@ -1,11 +1,13 @@
 #ifndef TELEOP_CONTROL_RUNTIME_HPP
 #define TELEOP_CONTROL_RUNTIME_HPP
 
-// Shared 60Hz control loop, generic over an input source and a telemetry sink.
+// Shared 60Hz control loop, generic over an intent source and a telemetry sink.
 
+#include "common/intent.hpp"
+#include "common/telemetry.hpp"
 #include "common/types.hpp"
 #include "core/mode_manager.hpp"
-#include "core/telemetry.hpp"
+#include "core/param_utils.hpp"
 #include "ros/manual_control_node.hpp"
 
 #include <chrono>
@@ -19,20 +21,28 @@ namespace autoware::manual_control {
 struct RuntimeConfig {
   double rate_hz = 60.0;
   float shift_stop_tolerance = 0.05f; // m/s — speed below which a shift proceeds
+  float shift_brake_accel = -10.0f;   // m/s^2 — override accel while shifting
+
+  // Loads its own params.
+  static RuntimeConfig load(rclcpp::Node &node) {
+    RuntimeConfig cfg;
+    cfg.rate_hz = load_double(node, "control_rate_hz", cfg.rate_hz);
+    cfg.shift_stop_tolerance =
+        load_float(node, "shift_stop_tolerance", cfg.shift_stop_tolerance);
+    cfg.shift_brake_accel =
+        load_float(node, "shift_brake_accel", cfg.shift_brake_accel);
+    return cfg;
+  }
 };
 
-// InputSource: InputState update(). TelemetrySink: void publish(Telemetry). On
-// stale input, update() returns a braking InputState (throttle 0, brake 1) so
-// the loop needs no special case.
-template <typename InputSource, typename TelemetrySink>
+// IntentSource: Intent update(). TelemetrySink: void publish(Telemetry). On
+// stale input, update() returns a braking Intent (throttle 0, brake 1) so the
+// loop needs no special case.
+template <typename IntentSource, typename TelemetrySink>
 void run_control_runtime(std::shared_ptr<ManualControlNode> node,
-                         InputSource &input, TelemetrySink &sink,
+                         IntentSource &source, TelemetrySink &sink,
                          const RuntimeConfig &cfg) {
   ModeManager mode_manager;
-
-  if (node->should_start_external()) {
-    node->force_external_mode();
-  }
 
   rclcpp::Rate rate(cfg.rate_hz);
   auto last_time = std::chrono::steady_clock::now();
@@ -49,31 +59,31 @@ void run_control_runtime(std::shared_ptr<ManualControlNode> node,
     if (dt > 0.1f)
       dt = 0.1f;
 
-    InputState input_state = input.update();
+    Intent intent = source.update();
 
-    if (input_state.quit)
+    if (intent.quit)
       running = false;
 
-    if (input_state.toggle_auto) {
-      node->toggle_manual_control();
+    if (intent.toggle_auto) {
+      node->toggle_operation_mode();
     }
 
-    if (input_state.reset_pose) {
+    if (intent.reset_pose) {
       node->reset_initial_pose();
     }
 
     VehicleState vehicle_state = node->get_vehicle_state();
 
     // Shift request: brake to a stop, shift, then resume (stop-wait-shift).
-    if (input_state.shift_drive && vehicle_state.gear != Gear::DRIVE) {
+    if (intent.shift_drive && vehicle_state.gear != Gear::DRIVE) {
       pending_gear = Gear::DRIVE;
       shift_state = ShiftState::STOPPING;
     }
-    if (input_state.shift_reverse && vehicle_state.gear != Gear::REVERSE) {
+    if (intent.shift_reverse && vehicle_state.gear != Gear::REVERSE) {
       pending_gear = Gear::REVERSE;
       shift_state = ShiftState::STOPPING;
     }
-    if (input_state.shift_park && vehicle_state.gear != Gear::PARK) {
+    if (intent.shift_park && vehicle_state.gear != Gear::PARK) {
       pending_gear = Gear::PARK;
       shift_state = ShiftState::STOPPING;
     }
@@ -84,7 +94,7 @@ void run_control_runtime(std::shared_ptr<ManualControlNode> node,
     if (shift_state == ShiftState::STOPPING) {
       override_control = true;
       override_cmd.velocity = 0.0f;
-      override_cmd.acceleration = -10.0f;
+      override_cmd.acceleration = cfg.shift_brake_accel;
       override_cmd.steer_angle = vehicle_state.steer_angle;
 
       if (std::abs(vehicle_state.velocity) < cfg.shift_stop_tolerance) {
@@ -94,7 +104,7 @@ void run_control_runtime(std::shared_ptr<ManualControlNode> node,
     } else if (shift_state == ShiftState::SHIFTING) {
       override_control = true;
       override_cmd.velocity = 0.0f;
-      override_cmd.acceleration = -10.0f;
+      override_cmd.acceleration = cfg.shift_brake_accel;
       override_cmd.steer_angle = vehicle_state.steer_angle;
 
       if (vehicle_state.gear == pending_gear) {
@@ -104,7 +114,7 @@ void run_control_runtime(std::shared_ptr<ManualControlNode> node,
       }
     }
 
-    mode_manager.update(dt, input_state, vehicle_state);
+    mode_manager.update(dt, intent, vehicle_state);
     ControlCommand cmd = mode_manager.getCommand();
 
     if (override_control) {
@@ -121,6 +131,7 @@ void run_control_runtime(std::shared_ptr<ManualControlNode> node,
     t.shift_state = shift_state;
     t.pending_gear = pending_gear;
     t.info = node->get_info_message();
+    t.operation_mode = node->operationModeName();
     sink.publish(t);
 
     rclcpp::spin_some(node);

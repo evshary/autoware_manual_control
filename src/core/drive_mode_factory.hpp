@@ -1,27 +1,35 @@
 #pragma once
 
-#include "common/types.hpp"
 #include "core/drive_mode.hpp"
 #include <functional>
 #include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace autoware::manual_control {
 
+// Modes compiled in (registerAvailable) are a library capability; the active
+// subset + cycle order (setActiveOrder) is a per-deployment config choice.
 class DriveModeFactory {
 public:
   using Creator = std::function<std::unique_ptr<DriveMode>()>;
 
   static DriveModeFactory &instance();
 
-  void registerMode(ModeType type, Creator creator);
-  std::unique_ptr<DriveMode> createMode(ModeType type) const;
-  std::vector<ModeType> getAvailableModes() const;
+  void registerAvailable(const std::string &name, Creator creator);
+  bool isAvailable(const std::string &name) const;
+  std::vector<std::string> availableNames() const;
+
+  void setActiveOrder(const std::vector<std::string> &order); // validates; requires "stop"
+  const std::vector<std::string> &activeOrder() const;
+
+  std::unique_ptr<DriveMode> createMode(const std::string &name) const;
 
 private:
   DriveModeFactory() = default;
-  std::map<ModeType, Creator> creators_;
+  std::map<std::string, Creator> available_;
+  std::vector<std::string> active_order_;
 };
 
 } // namespace autoware::manual_control
