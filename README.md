@@ -45,8 +45,6 @@ docker run --rm -it --net=host \
 `TELEOP_IMAGE` can be overridden to point at a fork's CI build (e.g.
 `TELEOP_IMAGE=ghcr.io/<your-fork>/autoware_manual_control:<tag>`).
 
----
-
 ## 🕹️ Operation Guide
 
 ### 1. Driving Checklist
@@ -91,8 +89,6 @@ Modes are config-selected plugins; the active set and cycle order come from the 
 
 All per-mode tuning lives in the config (see below).
 
----
-
 ## ⚙️ Configuration
 
 Behavior is customized via `teleop_config.yaml`; a fully-commented template ships as [`teleop_config.example.yaml`](teleop_config.example.yaml). Key parameters:
@@ -116,8 +112,6 @@ Behavior is customized via `teleop_config.yaml`; a fully-commented template ship
       # ... see teleop_config.example.yaml for the full set
 ```
 
----
-
 ## 🛠️ Development Setup
 
 For developers who want to modify source code or debug.
@@ -136,7 +130,10 @@ We provide a simplified Docker setup that communicates with Autoware via the Hos
 ./run_teleop.sh
 ```
 
-### 2. Build (Native ROS 2)
+### 2. Build (Keyboard Control Mode)
+
+#### Compilation
+
 ```bash
 mkdir -p autoware_manual_control_ws/src
 cd autoware_manual_control_ws/src
@@ -145,7 +142,72 @@ cd ..
 colcon build
 ```
 
----
+#### Run the Node
+
+```bash
+ros2 run autoware_manual_control keyboard_control
+```
+
+### 3. Build with Zenoh (Remote Driving)
+
+To enable the network transport (`zenoh_control`) for remote driving over Zenoh, you need the Zenoh C++ SDK and a JSON parser library.
+
+#### Prerequisites & Dependencies
+
+- **nlohmann_json**: A C++ JSON parser library. It can be installed via:
+  ```bash
+  sudo apt-get install nlohmann-json3-dev
+  ```
+- **Zenoh C/C++ SDK** (`zenohc` and `zenohcxx`):
+  - **Option A (Via rmw_zenoh workspace)**: If you build from a workspace that uses `rmw_zenoh`, the Zenoh vendor files are already bundled. You can export the path to this vendor prefix:
+    ```bash
+    export ZENOH_VENDOR_PREFIX="/path/to/rmw_zenoh_ws/install/zenoh_cpp_vendor/opt/zenoh_cpp_vendor"
+    export LD_LIBRARY_PATH="${ZENOH_VENDOR_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
+    ```
+  - **Option B (System Installation)**: Refer to the [eclipse-zenoh/zenoh-cpp](https://github.com/eclipse-zenoh/zenoh-cpp) repository to build and install `zenohc` and `zenohcxx` to your system paths.
+
+#### Compilation
+
+Build the package with the `TELEOP_WITH_ZENOH` CMake flag:
+
+```bash
+mkdir -p autoware_manual_control_ws/src
+cd autoware_manual_control_ws/src
+git clone https://github.com/evshary/autoware_manual_control.git
+cd ..
+# Build Zenoh transport only
+colcon build --cmake-args -DTELEOP_WITH_KEYBOARD=OFF -DTELEOP_WITH_ZENOH=ON
+```
+
+#### Run the Node
+
+```bash
+ros2 run autoware_manual_control zenoh_control --ros-args --params-file teleop_config.yaml
+```
+
+#### Remote interface
+
+`zenoh_control` has no local keyboard — it is driven by a remote operator client over Zenoh. It subscribes operator intent on `manual_control/<vehicle>/intent` and publishes vehicle telemetry on `manual_control/<vehicle>/telemetry`; both payloads are JSON.
+
+Intent (client → node), one object per control tick:
+
+| Field | Type | Meaning |
+| :-- | :-- | :-- |
+| `throttle` / `brake` / `steer` | number | drive axes (the keyboard's `W` / `S` / `A`·`D`) |
+| `gear` | string | `PARK`, `DRIVE`, or `REVERSE` |
+| `mode_cycle` / `toggle_auto` / `reset_pose` | integer | monotonic counters — increment to trigger the `M` / `Z` / `R` actions (drop/duplicate-safe) |
+| `estop` | integer | non-zero = emergency stop |
+
+Telemetry (node → client), published every control tick:
+
+| Field | Meaning |
+| :-- | :-- |
+| `operation_mode` / `mode` / `mode_status` | AD-API operation mode, active drive mode, mode status text |
+| `velocity` / `steer_angle` / `gear` | live vehicle state |
+| `target_velocity` / `target_acceleration` / `target_steer` | the command being sent |
+| `shift_state` / `pending_gear` | gear-shift progress |
+| `info` | human-readable status / last error |
+| `timestamp` | publish time (ms) |
 
 ## 🏗️ Architecture
 
@@ -249,8 +311,6 @@ That is the whole change — one mode file, one register line, one config entry.
 ### CI/CD Pipeline
 *   **Triggers**: Push to `main` or Tag `v*` -> Builds & Pushes to GHCR.
 *   **Image**: `ghcr.io/evshary/autoware_manual_control:latest`
-
----
 
 ## ❓ Troubleshooting
 
