@@ -258,3 +258,10 @@ That is the whole change — one mode file, one register line, one config entry.
 If you encounter a "Global Status Error" in RViz or TF errors related to the map frame (`map` frame does not exist), it is likely that the `autoware_map` volume is empty.
 
 👉 **Solution**: Run the map setup command in the **Quick Start** section.
+
+## Maintainers
+
+| Avatar | GitHub ID | Name |
+| --- | --- | --- |
+| <a href="https://github.com/evshary"><img src="https://github.com/evshary.png" width="48" alt="evshary" /></a> | [@evshary](https://github.com/evshary) | ChenYing Kuo |
+| <a href="https://github.com/Shiritai"><img src="https://github.com/Shiritai.png" width="48" alt="Shiritai" /></a> | [@Shiritai](https://github.com/Shiritai) | Tzu-Ching Yang |
