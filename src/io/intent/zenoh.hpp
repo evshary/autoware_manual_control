@@ -68,10 +68,6 @@ public:
     return s;
   }
 
-  std::string active_client_id() const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return latest_.client_id;
-  }
   bool watchdog_tripped() const { return watchdog_tripped_.load(); }
 
 private:
@@ -84,7 +80,6 @@ private:
     int64_t mode_cycle = 0;
     int64_t toggle_auto = 0;
     int64_t reset_pose = 0;
-    std::string client_id;
   };
 
   void on_intent(zenoh::Sample &sample) {
@@ -96,10 +91,6 @@ private:
       return;
     }
 
-    if (!j.contains("client_id") || !j["client_id"].is_string()) {
-      warn_once("missing or invalid client_id");
-      return;
-    }
     auto num_ok = [&](const char *k) {
       return !j.contains(k) || j[k].is_number();
     };
@@ -130,7 +121,6 @@ private:
     in.mode_cycle = j.value("mode_cycle", int64_t{0});
     in.toggle_auto = j.value("toggle_auto", int64_t{0});
     in.reset_pose = j.value("reset_pose", int64_t{0});
-    in.client_id = j.value("client_id", std::string{});
 
     std::lock_guard<std::mutex> lock(mutex_);
     latest_ = in;

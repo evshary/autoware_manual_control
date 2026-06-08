@@ -47,7 +47,6 @@ int main(int argc, char *argv[]) {
 
   ZenohTelemetry telemetry(session, "manual_control/" + vehicle + "/telemetry");
   telemetry.set_aux([&intent](nlohmann::json &j) {
-    j["active_client_id"] = intent.active_client_id();
     j["watchdog_tripped"] = intent.watchdog_tripped();
   });
 
