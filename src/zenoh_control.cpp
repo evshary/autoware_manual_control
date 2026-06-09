@@ -29,8 +29,8 @@ int main(int argc, char *argv[]) {
 
   const std::string zenoh_cfg =
       load_param<std::string>(*node, "zenoh_config", std::string{});
-  const std::string vehicle =
-      load_param<std::string>(*node, "vehicle", std::string{"v1"});
+  const std::string scope =
+      load_param<std::string>(*node, "scope", std::string{"v1"});
   const float arrival_timeout_ms =
       load_float(*node, "arrival_timeout_ms", 500.0f);
 
@@ -41,19 +41,19 @@ int main(int argc, char *argv[]) {
       std::make_shared<zenoh::Session>(zenoh::Session::open(std::move(zconf)));
 
   ZenohIntentConfig in_cfg;
-  in_cfg.intent_key = "manual_control/" + vehicle + "/intent";
+  in_cfg.intent_key = "manual_control/" + scope + "/intent";
   in_cfg.arrival_timeout_s = arrival_timeout_ms / 1000.0f;
   ZenohIntent intent(session, in_cfg);
 
-  ZenohTelemetry telemetry(session, "manual_control/" + vehicle + "/telemetry");
+  ZenohTelemetry telemetry(session, "manual_control/" + scope + "/telemetry");
   telemetry.set_aux([&intent](nlohmann::json &j) {
     j["watchdog_tripped"] = intent.watchdog_tripped();
   });
 
   RuntimeConfig cfg = RuntimeConfig::load(*node);
 
-  std::fprintf(stderr, "[zenoh_control] vehicle=%s rate=%.0fHz intent=%s\n",
-               vehicle.c_str(), cfg.rate_hz, in_cfg.intent_key.c_str());
+  std::fprintf(stderr, "[zenoh_control] scope=%s rate=%.0fHz intent=%s\n",
+               scope.c_str(), cfg.rate_hz, in_cfg.intent_key.c_str());
 
   // No startup pose seed: seeding would teleport the vehicle and break self-localization.
   run_control_runtime(node, intent, telemetry, cfg);

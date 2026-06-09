@@ -187,7 +187,7 @@ ros2 run autoware_manual_control zenoh_control --ros-args --params-file teleop_c
 
 #### Remote interface
 
-`zenoh_control` has no local keyboard — it is driven by a remote operator client over Zenoh. It subscribes operator intent on `manual_control/<vehicle>/intent` and publishes vehicle telemetry on `manual_control/<vehicle>/telemetry`; both payloads are JSON.
+`zenoh_control` has no local keyboard — it is driven by a remote operator client over Zenoh. It subscribes operator intent on `manual_control/<scope>/intent` and publishes vehicle telemetry on `manual_control/<scope>/telemetry`; both payloads are JSON.
 
 Intent (client → node), one object per control tick:
 
