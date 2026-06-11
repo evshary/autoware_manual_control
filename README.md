@@ -159,12 +159,22 @@ To enable the network transport (`zenoh_control`) for remote driving over Zenoh,
   sudo apt-get install nlohmann-json3-dev
   ```
 - **Zenoh C/C++ SDK** (`zenohc` and `zenohcxx`):
-  - **Option A (Via rmw_zenoh workspace)**: If you build from a workspace that uses `rmw_zenoh`, the Zenoh vendor files are already bundled. You can export the path to this vendor prefix:
+  - **Option A (Recommended, via apt)**: On Ubuntu, set up the official Eclipse Zenoh apt repository first, then install the pre-built libraries (see [zenoh-cpp-example](https://github.com/evshary/zenoh-cpp-example#option-1-install-packages-via-apt-ubuntu) or official documentation):
+    ```bash
+    # Add the Zenoh GPG Key
+    curl -L https://download.eclipse.org/zenoh/debian-repo/zenoh-public-key | sudo gpg --dearmor --yes --output /etc/apt/keyrings/zenoh-public-key.gpg
+    # Add the Repository to Sources
+    echo "deb [signed-by=/etc/apt/keyrings/zenoh-public-key.gpg] https://download.eclipse.org/zenoh/debian-repo/ /" | sudo tee /etc/apt/sources.list.d/zenoh.list > /dev/null
+    # Update and Install
+    sudo apt update
+    sudo apt install libzenohcpp-dev libzenohc-dev
+    ```
+    Install a Zenoh 1.x release matching the `rmw_zenoh` / remote peer you connect to, otherwise the endpoints won't discover each other.
+  - **Option B (Via rmw_zenoh workspace)**: If you build from a workspace that uses `rmw_zenoh`, the Zenoh vendor files are already bundled. You can export the path to this vendor prefix:
     ```bash
     export ZENOH_VENDOR_PREFIX="/path/to/rmw_zenoh_ws/install/zenoh_cpp_vendor/opt/zenoh_cpp_vendor"
     export LD_LIBRARY_PATH="${ZENOH_VENDOR_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
     ```
-  - **Option B (System Installation)**: Refer to the [eclipse-zenoh/zenoh-cpp](https://github.com/eclipse-zenoh/zenoh-cpp) repository to build and install `zenohc` and `zenohcxx` to your system paths.
 
 #### Compilation
 
