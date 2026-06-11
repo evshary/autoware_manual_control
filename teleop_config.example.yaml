@@ -4,6 +4,11 @@
     # implicit idle/safe state; entering the drive mode self-engages.
     operator_mode: remote
 
+    # zenoh_control only
+    scope: v1
+    arrival_timeout_ms: 500.0
+    zenoh_config: ""           # zenoh config json5 path; empty = default
+
     init_pose:
       presets:
         names: ["origin", "intersection"]
