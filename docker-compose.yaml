@@ -30,6 +30,20 @@ services:
     working_dir: /autoware_manual_control_ws
     command: sleep infinity
 
+  # Bridges Autoware's DDS to Zenoh on 7447 for the native_zenoh transport.
+  # Only started for the zenoh transport (profile), shares autoware's DDS via
+  # host networking, and serves the teleop over tcp/7447.
+  zenoh_bridge:
+    profiles: ["zenoh"]
+    network_mode: host
+    image: eclipse/zenoh-bridge-ros2dds:1.9.0
+    environment:
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - ROS_DISTRO=humble
+    volumes:
+      - ./config/zenoh-bridge-ros2dds-conf.json5:/config/zenoh-bridge-ros2dds-conf.json5:ro
+    command: ["-n", "/v1", "-c", "/config/zenoh-bridge-ros2dds-conf.json5"]
+
 volumes:
   autoware_map:
     # Use the manually created external volume to avoid "project name" prefix mismatch

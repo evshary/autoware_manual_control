@@ -13,27 +13,70 @@ else
     exit 1
 fi
 
-echo -e "\033[1;33m[Teleop]\033[0m Terminal Mode"
+# Read test environment state
+TRANSPORT="ros"
+ISOLATED="false"
+if [ -f tmp/test_state.env ]; then
+    source tmp/test_state.env
+fi
+
+# Determine colcon cmake arguments
+CMAKE_ARGS="-DPython3_EXECUTABLE=/usr/bin/python3 -DCMAKE_BUILD_TYPE=Release"
+if [ "$TRANSPORT" = "zenoh" ]; then
+    CMAKE_ARGS="$CMAKE_ARGS -DTELEOP_AUTOWARE_TRANSPORT=native_zenoh -DTELEOP_WITH_ZENOH=ON"
+else
+    CMAKE_ARGS="$CMAKE_ARGS -DTELEOP_AUTOWARE_TRANSPORT=rclcpp"
+fi
+
+echo -e "\033[1;33m[Teleop]\033[0m Terminal Mode (Transport: ${TRANSPORT}, Isolated: ${ISOLATED})"
 echo "Connecting to container..."
 
 # Execute interactive bash with environment sourced
 docker compose $COMPOSE_OPTS exec -it teleop bash -c "
     source /opt/autoware/setup.bash && \
     cd /autoware_manual_control_ws && \
-    
-    # logic to handle dev vs release
+
     PARAMS_ARG='' && \
     if [ -f src/autoware_manual_control/package.xml ]; then \
-        echo -e '\033[1;33m[Info]\033[0m Dev Mode: Checking for updates...' && \
-        colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release && \
-        PARAMS_ARG='--ros-args --params-file src/autoware_manual_control/teleop_config.yaml'; \
+        echo -e '\033[1;33m[Info]\033[0m Dev Mode: Checking for updates and compiling for $TRANSPORT...' && \
+        colcon build --cmake-args $CMAKE_ARGS && \
+        source install/setup.bash && \
+        if [ \"$TRANSPORT\" = \"zenoh\" ]; then \
+            SCOUTING='' && \
+            if [ \"$ISOLATED\" = \"true\" ]; then \
+                SCOUTING=',
+  scouting: { multicast: { enabled: false }, gossip: { enabled: false } }'; \
+            fi && \
+            cat > /tmp/zenoh_client.json5 << EOF
+{
+  mode: \"peer\",
+  connect: {
+    endpoints: [\"tcp/host.docker.internal:7447\"]
+  }\$SCOUTING
+}
+EOF
+            cp src/autoware_manual_control/teleop_config.yaml /tmp/teleop_config_zenoh.yaml && \
+            sed -i 's|zenoh_config: \"\"|zenoh_config: \"/tmp/zenoh_client.json5\"|g' /tmp/teleop_config_zenoh.yaml && \
+            PARAMS_ARG='--config /tmp/teleop_config_zenoh.yaml'; \
+        else \
+            { printf '/ManualControl:\n  ros__parameters:\n'; sed 's/^/    /' src/autoware_manual_control/teleop_config.yaml; } > /tmp/teleop_config_ros.yaml && \
+            PARAMS_ARG='--ros-args --params-file /tmp/teleop_config_ros.yaml'; \
+        fi; \
     elif [ -f teleop_config.yaml ]; then \
         echo -e '\033[1;33m[Info]\033[0m Release Mode: Custom config found.' && \
-        PARAMS_ARG='--ros-args --params-file teleop_config.yaml'; \
+        { printf '/ManualControl:\n  ros__parameters:\n'; sed 's/^/    /' teleop_config.yaml; } > /tmp/teleop_config_ros.yaml && \
+        PARAMS_ARG='--ros-args --params-file /tmp/teleop_config_ros.yaml'; \
     else \
         echo -e '\033[1;33m[Info]\033[0m Release Mode: Using default parameters.' ; \
     fi && \
 
-    source install/setup.bash && \
+    if [ \"$ISOLATED\" = \"true\" ]; then \
+        export ROS_LOCALHOST_ONLY=1; \
+    fi && \
+
     echo -e '\n\033[1;32mStarting Keyboard Control...\033[0m' && \
-    ros2 run autoware_manual_control keyboard_control \$PARAMS_ARG"
+    if [ \"$TRANSPORT\" = \"zenoh\" ]; then \
+        exec install/autoware_manual_control/lib/autoware_manual_control/keyboard_control \$PARAMS_ARG; \
+    else \
+        exec ros2 run autoware_manual_control keyboard_control \$PARAMS_ARG; \
+    fi"

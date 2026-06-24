@@ -1,0 +1,41 @@
+{
+  // ROS 2 / DDS <-> Zenoh bridge for the native_zenoh teleop transport.
+  // The bridge co-locates with Autoware's DDS and serves Zenoh on 7447 so the
+  // teleop's AutowareGateway can drive the vehicle over Zenoh. Launched under a
+  // namespace (e.g. `-n /v1`) so every key below is prefixed with that scope.
+  mode: "peer",
+  listen: { endpoints: ["tcp/0.0.0.0:7447"] },
+  plugins: {
+    ros2dds: {
+      // Allowlist is exactly the topics/services the teleop touches; nothing else
+      // crosses the bridge.
+      allow: {
+        // DDS -> Zenoh: vehicle/operation state the teleop subscribes to.
+        publishers: [
+          "/vehicle/status/velocity_status",
+          "/vehicle/status/steering_status",
+          "/vehicle/status/gear_status",
+          "/api/operation_mode/state",
+          "/api/localization/initialization_state",
+        ],
+        // Zenoh -> DDS: the control/gear commands and heartbeat the teleop publishes.
+        subscribers: [
+          "/external/selected/control_cmd",
+          "/external/selected/gear_cmd",
+          "/external/local/heartbeat",
+          "/external/remote/heartbeat",
+        ],
+        // AD-API operation-mode services the teleop calls (self-engage + mode switch).
+        service_servers: [
+          "/api/operation_mode/enable_autoware_control",
+          "/api/operation_mode/change_to_stop",
+          "/api/operation_mode/change_to_local",
+          "/api/operation_mode/change_to_remote",
+        ],
+        service_clients: ["/all_ignore"],
+        action_servers: ["/all_ignore"],
+        action_clients: ["/all_ignore"],
+      },
+    },
+  },
+}

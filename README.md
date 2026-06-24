@@ -35,7 +35,9 @@ docker run --rm -it --net=host \
   "${TELEOP_IMAGE:-ghcr.io/evshary/autoware_manual_control:latest}" \
   ros2 run autoware_manual_control keyboard_control
 
-# With Custom Config
+# With Custom Config (run_teleop.sh wraps the neutral config into a
+# ros__parameters params-file before launching; this raw invocation bypasses
+# it, so it expects an already-wrapped /ManualControl: ros__parameters: file)
 docker run --rm -it --net=host \
   -v $(pwd)/teleop_config.yaml:/autoware_manual_control_ws/teleop_config.yaml \
   "${TELEOP_IMAGE:-ghcr.io/evshary/autoware_manual_control:latest}" \
@@ -44,6 +46,31 @@ docker run --rm -it --net=host \
 
 `TELEOP_IMAGE` can be overridden to point at a fork's CI build (e.g.
 `TELEOP_IMAGE=ghcr.io/<your-fork>/autoware_manual_control:<tag>`).
+
+## 🛠️ Advanced & Dev Mode (Custom Transport & Isolation)
+
+`run_containers.sh` supports advanced transport and network topologies.
+
+### 1. Launch Stack
+```bash
+./run_containers.sh up [options]
+```
+Options:
+* `--transport <ros|zenoh>`: Choose transport mode, `ros` (default) or `zenoh`. In `zenoh` mode the stack also brings up a `zenoh_bridge` compose service (a published `eclipse/zenoh-bridge-ros2dds` image) that bridges Autoware's DDS to Zenoh on `tcp/7447`; no host binary is required.
+* `--isolated`: Place `teleop` container into an isolated bridge network (it reaches the bridge via `tcp/host.docker.internal:7447`).
+* `--no-autoware`: Exclude `autoware` from the local compose stack.
+
+### 2. Connect & Run
+```bash
+./run_teleop.sh
+```
+`run_teleop.sh` automatically detects the stack environment, builds the appropriate backend (`rclcpp` or `native_zenoh`), and configures parameters.
+
+### 3. Tear Down
+```bash
+./run_containers.sh down
+```
+Cleans up all containers (including the `zenoh_bridge` service) and deletes temporary configurations.
 
 ## 🕹️ Operation Guide
 
@@ -101,16 +128,18 @@ Behavior is customized via `teleop_config.yaml`; a fully-commented template ship
 | `physics:` / `cruise:` / `stop:` | Per-mode tuning blocks (speeds, accel/brake limits, steering rates, ...). Each mode reads its own block. |
 | `init_pose.presets` | Named poses (`[x, y, z, yaw]`) cycled by the `R` key. |
 
+`teleop_config.yaml` is plain nested YAML (no ROS envelope):
+
 ```yaml
-/ManualControl:
-  ros__parameters:
-    operator_mode: remote          # or "local"
-    modes: ["stop", "physics", "cruise"]
-    control_rate_hz: 60.0
-    physics:
-      max_speed: 27.78
-      # ... see teleop_config.example.yaml for the full set
+operator_mode: remote          # or "local"
+modes: ["stop", "physics", "cruise"]
+control_rate_hz: 60.0
+physics:
+  max_speed: 27.78
+  # ... see teleop_config.example.yaml for the full set
 ```
+
+`run_teleop.sh` feeds this file to the native binary via `--config`, and wraps it into a `/ManualControl: ros__parameters:` params-file for the rclcpp node.
 
 ## 🛠️ Development Setup
 
@@ -192,7 +221,7 @@ colcon build --cmake-args -DTELEOP_WITH_KEYBOARD=OFF -DTELEOP_WITH_ZENOH=ON
 #### Run the Node
 
 ```bash
-ros2 run autoware_manual_control zenoh_control --ros-args --params-file teleop_config.yaml
+ros2 run autoware_manual_control zenoh_control --config teleop_config.yaml
 ```
 
 #### Remote interface
