@@ -2,17 +2,20 @@
 #define TELEOP_MODES_PHYSICS_MODE_HPP
 
 #include "core/drive_mode.hpp"
-#include "core/param_utils.hpp"
+#include "core/parameter_reader.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <string>
 
-namespace autoware::manual_control {
+namespace autoware::manual_control
+{
 
-class PhysicsDriveMode : public DriveMode {
+class PhysicsDriveMode : public DriveMode
+{
 public:
-  struct Params {
+  struct Params
+  {
     float max_speed = 27.78f;       // m/s (100 km/h)
     float max_steer = 0.6f;         // rad
     float steer_rate = 0.8f;        // rad/s while a steer key is held
@@ -24,32 +27,37 @@ public:
     float max_vel_offset = 3.0f;    // m/s — setpoint may lead real by this much
   };
 
-  explicit PhysicsDriveMode(const Params &params) : params_(params) {}
+  explicit PhysicsDriveMode(const Params & params)
+  : params_(params) {}
 
-  static constexpr const char *kName = "physics";
-  static Params loadParams(rclcpp::Node &node) {
+  static constexpr const char * kName = "physics";
+  static Params loadParams(const ParameterReader & reader)
+  {
     Params p;
-    p.max_speed = load_float(node, "physics.max_speed", p.max_speed);
-    p.max_steer = load_float(node, "physics.max_steer", p.max_steer);
-    p.steer_rate = load_float(node, "physics.steer_rate", p.steer_rate);
-    p.steer_decay = load_float(node, "physics.steer_decay", p.steer_decay);
-    p.steer_deadzone = load_float(node, "physics.steer_deadzone", p.steer_deadzone);
-    p.accel_max = load_float(node, "physics.accel_max", p.accel_max);
-    p.brake_max = load_float(node, "physics.brake_max", p.brake_max);
-    p.coast_decel = load_float(node, "physics.coast_decel", p.coast_decel);
-    p.max_vel_offset = load_float(node, "physics.max_vel_offset", p.max_vel_offset);
+    p.max_speed = reader.read<float>("physics.max_speed", p.max_speed);
+    p.max_steer = reader.read<float>("physics.max_steer", p.max_steer);
+    p.steer_rate = reader.read<float>("physics.steer_rate", p.steer_rate);
+    p.steer_decay = reader.read<float>("physics.steer_decay", p.steer_decay);
+    p.steer_deadzone = reader.read<float>("physics.steer_deadzone", p.steer_deadzone);
+    p.accel_max = reader.read<float>("physics.accel_max", p.accel_max);
+    p.brake_max = reader.read<float>("physics.brake_max", p.brake_max);
+    p.coast_decel = reader.read<float>("physics.coast_decel", p.coast_decel);
+    p.max_vel_offset = reader.read<float>("physics.max_vel_offset", p.max_vel_offset);
     return p;
   }
 
-  void onEnter(const VehicleState &state) override {
+  void onEnter(const VehicleState & state) override
+  {
     desired_vel_ = std::abs(state.velocity);
     current_steer_ = state.steer_angle;
     last_gear_ = state.gear;
     status_accel_ = 0.0f;
   }
 
-  ControlCommand update(float dt, const Intent &intent,
-                        const VehicleState &vehicle_state) override {
+  ControlCommand update(
+    float dt, const Intent & intent,
+    const VehicleState & vehicle_state) override
+  {
     // Wipe the setpoint on gear change so speed isn't carried across a reverse.
     if (vehicle_state.gear != last_gear_) {
       desired_vel_ = 0.0f;
@@ -69,7 +77,7 @@ public:
       current_steer_ = 0.0f;
     }
     current_steer_ =
-        std::clamp(current_steer_, -params_.max_steer, params_.max_steer);
+      std::clamp(current_steer_, -params_.max_steer, params_.max_steer);
 
     float desired_accel;
     if (intent.throttle > 0.0f) {
@@ -82,8 +90,9 @@ public:
 
     // Bound the setpoint to real speed so it can't wind up arbitrarily far off.
     desired_vel_ += desired_accel * dt;
-    desired_vel_ = std::min(desired_vel_,
-                            std::abs(vehicle_state.velocity) + params_.max_vel_offset);
+    desired_vel_ = std::min(
+      desired_vel_,
+      std::abs(vehicle_state.velocity) + params_.max_vel_offset);
     desired_vel_ = std::clamp(desired_vel_, 0.0f, params_.max_speed);
 
     // Drop only positive intent at max_speed; keep negative so braking holds.
@@ -100,9 +109,10 @@ public:
     return cmd;
   }
 
-  std::string getName() const override { return "PHYSICS"; }
+  std::string getName() const override {return "PHYSICS";}
 
-  std::string getStatusString() const override {
+  std::string getStatusString() const override
+  {
     char buf[64];
     std::snprintf(buf, sizeof(buf), "Acc: %.2f m/s2", status_accel_);
     return std::string(buf);

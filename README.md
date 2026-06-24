@@ -228,7 +228,7 @@ A small, component-based design. The control loop is generic over two ports — 
 src/
 ├── common/      # Shared data: domain atoms (types.hpp) + the two port payloads (intent.hpp, telemetry.hpp)
 ├── core/        # Control machinery: 60Hz loop (control_runtime), ModeManager, DriveMode interface + factory,
-│                #   the mode registry (register_modes), and generic ROS-param helpers (param_utils)
+│                #   the mode registry (register_modes), and the transport-blind parameter reader (parameter_reader)
 ├── modes/       # Drive-mode strategies (stop, physics, cruise)
 ├── ros/         # ROS boundary: ManualControlNode (pubs/subs/services, AD-API operation mode)
 ├── io/
@@ -311,9 +311,9 @@ The smallest worked example is [`src/modes/stop_mode.hpp`](src/modes/stop_mode.h
 
 1.  **Implement** `src/modes/<name>_mode.hpp`: a class inheriting `DriveMode` (`src/core/drive_mode.hpp`) that provides
     *   `static constexpr const char *kName = "<name>";`
-    *   a `struct Params { ... };` plus `static Params loadParams(rclcpp::Node &node)` that reads its tuning from config (use the `load_param` / `load_float` / `load_double` helpers in `core/param_utils.hpp`),
+    *   a `struct Params { ... };` plus `static Params loadParams(const ParameterReader &reader)` that reads its tuning from config (use the reader's `read<T>(name, default)` accessors, e.g. `reader.read<float>("<name>.gain", p.gain)` — see `core/parameter_reader.hpp`),
     *   a constructor taking `const Params &`, and the strategy method `ControlCommand update(float dt, const Intent &intent, const VehicleState &vehicle_state)` (optionally `onEnter` / `onExit` / `getStatusString`).
-2.  **Register** it: add one line `register_mode<YourDriveMode>(factory, node);` to `register_all_modes` in `src/core/register_modes.hpp`.
+2.  **Register** it: add one line `register_mode<YourDriveMode>(factory, reader);` to `register_all_modes` in `src/core/register_modes.hpp`.
 3.  **Enable** it: add its `kName` to the `modes:` list in `teleop_config.yaml` (and a tuning block if it has params).
 
 That is the whole change — one mode file, one register line, one config entry. No enum, no factory edits, no loop changes.

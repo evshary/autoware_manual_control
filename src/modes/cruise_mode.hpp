@@ -2,16 +2,19 @@
 #define TELEOP_MODES_CRUISE_MODE_HPP
 
 #include "core/drive_mode.hpp"
-#include "core/param_utils.hpp"
+#include "core/parameter_reader.hpp"
 #include <algorithm>
 #include <cmath>
 #include <string>
 
-namespace autoware::manual_control {
+namespace autoware::manual_control
+{
 
-class CruiseDriveMode : public DriveMode {
+class CruiseDriveMode : public DriveMode
+{
 public:
-  struct Params {
+  struct Params
+  {
     float max_speed = 27.78f;          // m/s (100 km/h)
     float steer_rate = 0.3f;           // rad/s
     float steer_limit = 0.6f;          // rad
@@ -22,23 +25,26 @@ public:
     float min_accel = -10.0f;
   };
 
-  explicit CruiseDriveMode(const Params &params) : params_(params) {}
+  explicit CruiseDriveMode(const Params & params)
+  : params_(params) {}
 
-  static constexpr const char *kName = "cruise";
-  static Params loadParams(rclcpp::Node &node) {
+  static constexpr const char * kName = "cruise";
+  static Params loadParams(const ParameterReader & reader)
+  {
     Params p;
-    p.max_speed = load_float(node, "cruise.max_speed", p.max_speed);
-    p.steer_rate = load_float(node, "cruise.steer_rate", p.steer_rate);
-    p.steer_limit = load_float(node, "cruise.steer_limit", p.steer_limit);
-    p.vel_inc_hold_kph_s = load_float(node, "cruise.vel_inc_hold_kph_s", p.vel_inc_hold_kph_s);
-    p.vel_dec_hold_kph_s = load_float(node, "cruise.vel_dec_hold_kph_s", p.vel_dec_hold_kph_s);
-    p.accel_p_gain = load_float(node, "cruise.accel_p_gain", p.accel_p_gain);
-    p.max_accel = load_float(node, "cruise.max_accel", p.max_accel);
-    p.min_accel = load_float(node, "cruise.min_accel", p.min_accel);
+    p.max_speed = reader.read<float>("cruise.max_speed", p.max_speed);
+    p.steer_rate = reader.read<float>("cruise.steer_rate", p.steer_rate);
+    p.steer_limit = reader.read<float>("cruise.steer_limit", p.steer_limit);
+    p.vel_inc_hold_kph_s = reader.read<float>("cruise.vel_inc_hold_kph_s", p.vel_inc_hold_kph_s);
+    p.vel_dec_hold_kph_s = reader.read<float>("cruise.vel_dec_hold_kph_s", p.vel_dec_hold_kph_s);
+    p.accel_p_gain = reader.read<float>("cruise.accel_p_gain", p.accel_p_gain);
+    p.max_accel = reader.read<float>("cruise.max_accel", p.max_accel);
+    p.min_accel = reader.read<float>("cruise.min_accel", p.min_accel);
     return p;
   }
 
-  void onEnter(const VehicleState &state) override {
+  void onEnter(const VehicleState & state) override
+  {
     target_speed_ = std::abs(state.velocity);
     if (target_speed_ > params_.max_speed) {
       target_speed_ = 0.0f;
@@ -52,8 +58,10 @@ public:
     last_gear_ = state.gear;
   }
 
-  ControlCommand update(float dt, const Intent &intent,
-                        const VehicleState &vehicle_state) override {
+  ControlCommand update(
+    float dt, const Intent & intent,
+    const VehicleState & vehicle_state) override
+  {
     if (vehicle_state.gear != last_gear_) {
       target_speed_ = 0.0f;
       last_gear_ = vehicle_state.gear;
@@ -64,7 +72,7 @@ public:
       current_steer_ += intent.steer_dir * params_.steer_rate * dt;
     }
     current_steer_ =
-        std::clamp(current_steer_, -params_.steer_limit, params_.steer_limit);
+      std::clamp(current_steer_, -params_.steer_limit, params_.steer_limit);
 
     if (vehicle_state.gear == Gear::PARK) {
       target_speed_ = 0.0f;
@@ -108,8 +116,8 @@ public:
     return cmd;
   }
 
-  std::string getName() const override { return "CRUISE"; }
-  std::string getStatusString() const override { return ""; }
+  std::string getName() const override {return "CRUISE";}
+  std::string getStatusString() const override {return "";}
 
 private:
   Params params_;
