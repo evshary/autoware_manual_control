@@ -118,7 +118,33 @@ if(TELEOP_AUTOWARE_TRANSPORT STREQUAL "native_zenoh")
     autoware_adapi_v1_msgs/msg/ResponseStatus.idl
     autoware_adapi_v1_msgs/srv/ChangeOperationMode.idl)
 
+  # test_msgs is a fixed test corpus vendored under test/test_msgs_idl (a
+  # shape-coverage fixture, drift-irrelevant; the build needs no installed
+  # ros-humble-test-msgs). It exercises every field SHAPE rosidl tests (all
+  # int widths, float, bool, byte/char, unbounded + bounded + empty strings,
+  # fixed arrays incl. nested and the trailing alignment_check field, bounded +
+  # unbounded sequences, single and multi-level nesting, constants, defaults,
+  # empty), run through the SAME stage_idl -> rosidl codec path the production
+  # messages use so the codec is certified on every shape -- not only the shapes
+  # the production messages happen to use. Compiled into test_cdr only. WStrings
+  # is excluded: rmw_cyclonedds encodes wstring UTF-32 while fastrtps uses
+  # UTF-16, an upstream incompatibility; no production message uses wstring.
+  set(TELEOP_TEST_IDL
+    test_msgs/msg/BasicTypes.idl
+    test_msgs/msg/Constants.idl
+    test_msgs/msg/Defaults.idl
+    test_msgs/msg/Strings.idl
+    test_msgs/msg/Empty.idl
+    test_msgs/msg/Nested.idl
+    test_msgs/msg/Arrays.idl
+    test_msgs/msg/BoundedSequences.idl
+    test_msgs/msg/UnboundedSequences.idl
+    test_msgs/msg/MultiNested.idl)
+
   set(TELEOP_ALL_IDL ${TELEOP_MSG_IDL})
+  if(BUILD_TESTING)
+    list(APPEND TELEOP_ALL_IDL ${TELEOP_TEST_IDL})
+  endif()
 
   # rosidl namespaces the generated types after the consuming project, so the
   # module declared inside each .idl must match it. Stage the installed .idl
@@ -127,10 +153,15 @@ if(TELEOP_AUTOWARE_TRANSPORT STREQUAL "native_zenoh")
   set(_share_args "")
   foreach(rel ${TELEOP_ALL_IDL})
     string(REGEX REPLACE "/.*" "" pkg "${rel}")
-    if(NOT ${pkg}_FOUND)
-      find_package(${pkg} REQUIRED)
+    if(pkg STREQUAL "test_msgs")
+      # The vendored fixtures, not an installed package share dir.
+      set(_share "${CMAKE_CURRENT_SOURCE_DIR}/test/test_msgs_idl")
+    else()
+      if(NOT ${pkg}_FOUND)
+        find_package(${pkg} REQUIRED)
+      endif()
+      get_filename_component(_share "${${pkg}_DIR}/.." ABSOLUTE)
     endif()
-    get_filename_component(_share "${${pkg}_DIR}/.." ABSOLUTE)
     list(APPEND _share_args "${pkg}=${_share}")
   endforeach()
   list(REMOVE_DUPLICATES _share_args)
@@ -144,10 +175,19 @@ if(TELEOP_AUTOWARE_TRANSPORT STREQUAL "native_zenoh")
     message(FATAL_ERROR "stage_idl.py failed")
   endif()
 
+  # The staged leaf names of the test-only fixtures, so their codec .cpp can be
+  # routed to test_cdr alone (never the shipped binary).
+  set(_test_leaves "")
+  foreach(rel ${TELEOP_TEST_IDL})
+    string(REGEX REPLACE "^[^/]*/" "" _leaf "${rel}")
+    list(APPEND _test_leaves "${_leaf}")
+  endforeach()
+
   # Map each staged .idl to its interface tuple and to the codec .cpp the
   # generator emits (deterministic: snake_case of the stem under detail/).
   set(_idl_tuples "")
   set(TELEOP_CODEC_SRC "")
+  set(TELEOP_TEST_CODEC_SRC "")
   set(_codec_dir "${CMAKE_CURRENT_BINARY_DIR}/rosidl_typesupport_fastrtps_cpp/${PROJECT_NAME}")
   foreach(s ${_staged_idl})
     list(APPEND _idl_tuples "${_stage_dir}:${s}")
@@ -158,8 +198,12 @@ if(TELEOP_AUTOWARE_TRANSPORT STREQUAL "native_zenoh")
     string(REGEX REPLACE "(.)([A-Z][a-z]+)" "\\1_\\2" _snake "${_stem}")
     string(REGEX REPLACE "([a-z0-9])([A-Z])" "\\1_\\2" _snake "${_snake}")
     string(TOLOWER "${_snake}" _snake)
-    list(APPEND TELEOP_CODEC_SRC
-      "${_codec_dir}/${_kind}/detail/dds_fastrtps/${_snake}__type_support.cpp")
+    set(_cpp "${_codec_dir}/${_kind}/detail/dds_fastrtps/${_snake}__type_support.cpp")
+    if("${s}" IN_LIST _test_leaves)
+      list(APPEND TELEOP_TEST_CODEC_SRC "${_cpp}")
+    else()
+      list(APPEND TELEOP_CODEC_SRC "${_cpp}")
+    endif()
   endforeach()
 
   rosidl_generate_interfaces(${PROJECT_NAME} ${_idl_tuples}
@@ -224,6 +268,26 @@ if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
+
+  # Byte-perfect CDR gate for the native_zenoh transport. Links the production
+  # codec plus the test_msgs shape-coverage codec (generated only under
+  # BUILD_TESTING); the shipped binary carries neither.
+  if(TELEOP_AUTOWARE_TRANSPORT STREQUAL "native_zenoh")
+    find_package(ament_cmake_gtest REQUIRED)
+    ament_add_gtest(test_cdr test/test_cdr.cpp
+      src/transport/zenoh/typesupport_stub.cpp
+      ${TELEOP_CODEC_SRC} ${TELEOP_TEST_CODEC_SRC})
+    add_dependencies(test_cdr ${PROJECT_NAME})
+    target_include_directories(test_cdr PRIVATE src ${TELEOP_CODEC_INCLUDE})
+    target_link_libraries(test_cdr fastcdr)
+
+    # Contract gate for the native ParameterReader: dotted keys, type fallback,
+    # empty-string semantics, and quote/comment handling.
+    ament_add_gtest(test_param_reader test/test_param_reader.cpp
+      src/transport/zenoh/parameter_reader.cpp)
+    target_include_directories(test_param_reader PRIVATE src ${YAML_INCLUDE_DIR})
+    target_link_libraries(test_param_reader ${YAML_STATIC_LIB})
+  endif()
 endif()
 
 ament_package()

@@ -199,6 +199,29 @@ ros2 run autoware_manual_control zenoh_control --ros-args --params-file teleop_c
 
 `zenoh_control` has no local keyboard — it is driven by a remote operator client over Zenoh. It subscribes operator intent on `manual_control/<scope>/intent` and publishes vehicle telemetry on `manual_control/<scope>/telemetry`; both payloads are JSON.
 
+### 4. Testing
+
+The unit tests are ROS-free: the `native_zenoh` codec's golden reference bytes are committed into the test sources, so the suites build and run with no Autoware/rmw runtime. They are registered for the `native_zenoh` transport and run via `colcon`:
+
+```bash
+# Build with the native_zenoh transport, then run the tests
+colcon build --packages-select autoware_manual_control \
+  --cmake-args -DTELEOP_AUTOWARE_TRANSPORT=native_zenoh -DTELEOP_WITH_ZENOH=ON
+colcon test --packages-select autoware_manual_control
+colcon test-result --verbose
+```
+
+* **`test_cdr`** (31 tests) — the byte-perfect CDR gate. The native codec's output is asserted byte-for-byte equal to golden bytes captured from a real rmw, across the production control/telemetry messages, a full field-shape corpus (the vendored `test/test_msgs_idl` fixtures, exercising every field shape), and an independent Foxglove decoder oracle.
+* **`test_param_reader`** (10 tests) — the native parameter reader's contract: dotted keys, inline sequences, type fallback, empty-string and quoting/comment semantics.
+
+#### Golden-byte drift guard (requires ROS)
+
+`test/capture_golden.py` is a separate refresh/drift tool, **not** part of `colcon test`. It re-captures the golden bytes from a live rmw (`rclpy` under `rmw_cyclonedds_cpp`), so it must be run with ROS + Autoware sourced. Use `--check` in CI or after an Autoware message bump to diff the committed goldens against the live wire; with no flag it rewrites them.
+
+```bash
+RMW_IMPLEMENTATION=rmw_cyclonedds_cpp python3 test/capture_golden.py --check
+```
+
 Intent (client → node), one object per control tick:
 
 | Field | Type | Meaning |
