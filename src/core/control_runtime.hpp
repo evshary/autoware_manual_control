@@ -7,30 +7,32 @@
 #include "common/telemetry.hpp"
 #include "common/types.hpp"
 #include "core/mode_manager.hpp"
-#include "core/param_utils.hpp"
-#include "ros/manual_control_node.hpp"
+#include "core/parameter_reader.hpp"
+#include "core/autoware_gateway.hpp"
 
 #include <chrono>
 #include <cmath>
 #include <memory>
+#include <thread>
 
-#include <rclcpp/rclcpp.hpp>
+namespace autoware::manual_control
+{
 
-namespace autoware::manual_control {
-
-struct RuntimeConfig {
+struct RuntimeConfig
+{
   double rate_hz = 60.0;
   float shift_stop_tolerance = 0.05f; // m/s — speed below which a shift proceeds
   float shift_brake_accel = -10.0f;   // m/s^2 — override accel while shifting
 
   // Loads its own params.
-  static RuntimeConfig load(rclcpp::Node &node) {
+  static RuntimeConfig load(const ParameterReader & reader)
+  {
     RuntimeConfig cfg;
-    cfg.rate_hz = load_double(node, "control_rate_hz", cfg.rate_hz);
+    cfg.rate_hz = reader.read<double>("control_rate_hz", cfg.rate_hz);
     cfg.shift_stop_tolerance =
-        load_float(node, "shift_stop_tolerance", cfg.shift_stop_tolerance);
+      reader.read<float>("shift_stop_tolerance", cfg.shift_stop_tolerance);
     cfg.shift_brake_accel =
-        load_float(node, "shift_brake_accel", cfg.shift_brake_accel);
+      reader.read<float>("shift_brake_accel", cfg.shift_brake_accel);
     return cfg;
   }
 };
@@ -38,41 +40,46 @@ struct RuntimeConfig {
 // IntentSource: Intent update(). TelemetrySink: void publish(Telemetry). On
 // stale input, update() returns a braking Intent (throttle 0, brake 1) so the
 // loop needs no special case.
-template <typename IntentSource, typename TelemetrySink>
-void run_control_runtime(std::shared_ptr<ManualControlNode> node,
-                         IntentSource &source, TelemetrySink &sink,
-                         const RuntimeConfig &cfg) {
+template<typename IntentSource, typename TelemetrySink>
+void run_control_runtime(
+  std::shared_ptr<AutowareGateway> gateway,
+  IntentSource & source, TelemetrySink & sink,
+  const RuntimeConfig & cfg)
+{
   ModeManager mode_manager;
 
-  rclcpp::Rate rate(cfg.rate_hz);
   auto last_time = std::chrono::steady_clock::now();
 
   ShiftState shift_state = ShiftState::IDLE;
   Gear pending_gear = Gear::PARK;
 
+  const auto loop_duration = std::chrono::microseconds(static_cast<int>(1000000.0 / cfg.rate_hz));
+
   bool running = true;
-  while (rclcpp::ok() && running) {
+  while (gateway->ok() && running) {
     auto now = std::chrono::steady_clock::now();
     std::chrono::duration<float> dt_duration = now - last_time;
     last_time = now;
     float dt = dt_duration.count();
-    if (dt > 0.1f)
+    if (dt > 0.1f) {
       dt = 0.1f;
+    }
 
     Intent intent = source.update();
 
-    if (intent.quit)
+    if (intent.quit) {
       running = false;
+    }
 
     if (intent.toggle_auto) {
-      node->toggle_operation_mode();
+      gateway->toggle_operation_mode();
     }
 
     if (intent.reset_pose) {
-      node->reset_initial_pose();
+      gateway->reset_initial_pose();
     }
 
-    VehicleState vehicle_state = node->get_vehicle_state();
+    VehicleState vehicle_state = gateway->get_vehicle_state();
 
     // Shift request: brake to a stop, shift, then resume (stop-wait-shift).
     if (intent.shift_drive && vehicle_state.gear != Gear::DRIVE) {
@@ -98,7 +105,7 @@ void run_control_runtime(std::shared_ptr<ManualControlNode> node,
       override_cmd.steer_angle = vehicle_state.steer_angle;
 
       if (std::abs(vehicle_state.velocity) < cfg.shift_stop_tolerance) {
-        node->set_target_gear(pending_gear);
+        gateway->set_target_gear(pending_gear);
         shift_state = ShiftState::SHIFTING;
       }
     } else if (shift_state == ShiftState::SHIFTING) {
@@ -121,7 +128,7 @@ void run_control_runtime(std::shared_ptr<ManualControlNode> node,
       cmd = override_cmd;
     }
 
-    node->publish_command(cmd);
+    gateway->publish_command(cmd);
 
     Telemetry t;
     t.mode = mode_manager.getCurrentModeName();
@@ -130,12 +137,12 @@ void run_control_runtime(std::shared_ptr<ManualControlNode> node,
     t.command = cmd;
     t.shift_state = shift_state;
     t.pending_gear = pending_gear;
-    t.info = node->get_info_message();
-    t.operation_mode = node->operationModeName();
+    t.info = gateway->get_info_message();
+    t.operation_mode = gateway->operationModeName();
     sink.publish(t);
 
-    rclcpp::spin_some(node);
-    rate.sleep();
+    gateway->spin_some();
+    std::this_thread::sleep_for(loop_duration);
   }
 }
 
