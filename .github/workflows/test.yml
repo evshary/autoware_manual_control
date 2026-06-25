@@ -1,0 +1,60 @@
+name: Test
+
+on:
+  push:
+    branches: [ "main", "feat/*" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container:
+      image: ros:humble
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: src/autoware_manual_control
+
+      - name: Install build and test dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            git \
+            python3-colcon-common-extensions \
+            ros-humble-rmw-cyclonedds-cpp \
+            ros-humble-fastcdr \
+            ros-humble-test-msgs \
+            ros-humble-autoware-control-msgs \
+            ros-humble-autoware-vehicle-msgs \
+            ros-humble-autoware-adapi-v1-msgs \
+            ros-humble-zenoh-cpp-vendor \
+            nlohmann-json3-dev \
+            libyaml-dev
+
+      - name: Build (native_zenoh transport)
+        run: |
+          source /opt/ros/humble/setup.bash
+          export ZENOH_VENDOR_PREFIX=/opt/ros/humble/opt/zenoh_cpp_vendor
+          colcon build --packages-select autoware_manual_control \
+            --cmake-args -DTELEOP_AUTOWARE_TRANSPORT=native_zenoh -DTELEOP_WITH_ZENOH=ON
+        shell: bash
+
+      - name: Byte-perfect gate (test_cdr + test_param_reader)
+        run: |
+          source /opt/ros/humble/setup.bash
+          ctest --test-dir build/autoware_manual_control \
+            -R 'test_cdr|test_param_reader' --output-on-failure
+        shell: bash
+
+      - name: Golden-byte drift guard
+        run: |
+          source /opt/ros/humble/setup.bash
+          RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
+            python3 src/autoware_manual_control/test/capture_golden.py --check
+        shell: bash

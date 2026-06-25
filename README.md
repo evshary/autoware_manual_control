@@ -233,12 +233,15 @@ ros2 run autoware_manual_control zenoh_control --config teleop_config.yaml
 The unit tests are ROS-free: the `native_zenoh` codec's golden reference bytes are committed into the test sources, so the suites build and run with no Autoware/rmw runtime. They are registered for the `native_zenoh` transport and run via `colcon`:
 
 ```bash
-# Build with the native_zenoh transport, then run the tests
+# Build with the native_zenoh transport, then run the two gtests
 colcon build --packages-select autoware_manual_control \
   --cmake-args -DTELEOP_AUTOWARE_TRANSPORT=native_zenoh -DTELEOP_WITH_ZENOH=ON
-colcon test --packages-select autoware_manual_control
+colcon test --packages-select autoware_manual_control \
+  --ctest-args -R 'test_cdr|test_param_reader'
 colcon test-result --verbose
 ```
+
+A bare `colcon test` (no `-R`) additionally runs the package's `ament_lint` suite. The `-R` filter above scopes the run to the two functional gtests.
 
 * **`test_cdr`** (31 tests) — the byte-perfect CDR gate. The native codec's output is asserted byte-for-byte equal to golden bytes captured from a real rmw, across the production control/telemetry messages, a full field-shape corpus (the vendored `test/test_msgs_idl` fixtures, exercising every field shape), and an independent Foxglove decoder oracle.
 * **`test_param_reader`** (10 tests) — the native parameter reader's contract: dotted keys, inline sequences, type fallback, empty-string and quoting/comment semantics.
