@@ -163,6 +163,20 @@ T ParameterReader::read(const std::string & name, const T & default_val) const
   const std::vector<std::string> * v = impl_->params.lookup(name);
   if constexpr (std::is_same_v<T, std::vector<std::string>>) {
     return (v && !v->empty()) ? *v : default_val;
+  } else if constexpr (std::is_same_v<T, std::vector<double>>) {
+    // Sequences are stored as strings; convert each element. Any non-numeric
+    // element falls the whole read back to the default (same contract as scalars).
+    if (!v || v->empty()) {return default_val;}
+    std::vector<double> out;
+    out.reserve(v->size());
+    for (const std::string & s : *v) {
+      try {
+        out.push_back(std::stod(s));
+      } catch (const std::exception &) {
+        warn(name, "number", s); return default_val;
+      }
+    }
+    return out;
   } else {
     // An empty value is the "use the default" sentinel (preserves the original
     // empty-string contract).
@@ -191,5 +205,9 @@ template std::vector<std::string>
 ParameterReader::read<std::vector<std::string>>(
   const std::string &,
   const std::vector<std::string> &) const;
+template std::vector<double>
+ParameterReader::read<std::vector<double>>(
+  const std::string &,
+  const std::vector<double> &) const;
 
 } // namespace autoware::manual_control

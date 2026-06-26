@@ -40,6 +40,10 @@ extern template std::vector<std::string>
 ParameterReader::read<std::vector<std::string>>(
   const std::string &,
   const std::vector<std::string> &) const;
+extern template std::vector<double>
+ParameterReader::read<std::vector<double>>(
+  const std::string &,
+  const std::vector<double> &) const;
 
 } // namespace autoware::manual_control
 

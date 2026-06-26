@@ -11,6 +11,7 @@
 #include "autoware_manual_control/msg/localization_initialization_state.hpp"
 #include "autoware_manual_control/msg/manual_operator_heartbeat.hpp"
 #include "autoware_manual_control/msg/operation_mode_state.hpp"
+#include "autoware_manual_control/msg/pose_with_covariance_stamped.hpp"
 #include "autoware_manual_control/msg/steering_report.hpp"
 #include "autoware_manual_control/msg/velocity_report.hpp"
 #include "autoware_manual_control/srv/change_operation_mode.hpp"
@@ -24,6 +25,8 @@
   "autoware_manual_control/msg/detail/manual_operator_heartbeat__rosidl_typesupport_fastrtps_cpp.hpp"
 #include \
   "autoware_manual_control/msg/detail/operation_mode_state__rosidl_typesupport_fastrtps_cpp.hpp"
+#include \
+  "autoware_manual_control/msg/detail/pose_with_covariance_stamped__rosidl_typesupport_fastrtps_cpp.hpp"
 #include "autoware_manual_control/msg/detail/steering_report__rosidl_typesupport_fastrtps_cpp.hpp"
 #include "autoware_manual_control/msg/detail/velocity_report__rosidl_typesupport_fastrtps_cpp.hpp"
 #include \
@@ -32,6 +35,7 @@
 #include <zenoh.hxx>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstdint>
 #include <cstdio>
@@ -80,6 +84,13 @@ struct AutowareGateway::Impl
   std::unique_ptr<zenoh::Publisher> pub_control;
   std::unique_ptr<zenoh::Publisher> pub_gear;
   std::unique_ptr<zenoh::Publisher> pub_heartbeat;
+  std::unique_ptr<zenoh::Publisher> pub_initialpose;
+
+  // Initial-pose presets, read once at construction. reset_initial_pose() cycles
+  // names_ and seeds /initialpose from the matching [x,y,z,yaw] preset.
+  std::vector<std::string> preset_names;
+  std::vector<std::vector<double>> presets;
+  int preset_index = -1;
 
   std::unique_ptr<zenoh::Subscriber<void>> sub_velocity;
   std::unique_ptr<zenoh::Subscriber<void>> sub_gear;
@@ -130,6 +141,16 @@ AutowareGateway::AutowareGateway()
   const float arrival_timeout_ms = reader->read<float>("arrival_timeout_ms", 500.0f);
   impl_->service_timeout_ms = static_cast<uint64_t>(arrival_timeout_ms);
 
+  // Initial-pose presets: a name list plus an [x,y,z,yaw] array per name. Read
+  // once here; reset_initial_pose() cycles them at runtime (see rclcpp node).
+  impl_->preset_names =
+    reader->read<std::vector<std::string>>("init_pose.presets.names", {"origin"});
+  for (const std::string & name : impl_->preset_names) {
+    impl_->presets.push_back(
+      reader->read<std::vector<double>>(
+        "init_pose.presets." + name, {0.0, 0.0, 0.0, 0.0}));
+  }
+
   const std::string zenoh_cfg = reader->read<std::string>("zenoh_config", std::string{});
   zenoh::Config zconf = zenoh_cfg.empty() ?
     zenoh::Config::create_default() :
@@ -140,6 +161,8 @@ AutowareGateway::AutowareGateway()
       return impl_->scope + ros_name;
     };
 
+  impl_->pub_initialpose = std::make_unique<zenoh::Publisher>(
+    impl_->session->declare_publisher(zenoh::KeyExpr(key("/initialpose"))));
   impl_->pub_control = std::make_unique<zenoh::Publisher>(
     impl_->session->declare_publisher(zenoh::KeyExpr(key("/external/selected/control_cmd"))));
   impl_->pub_gear = std::make_unique<zenoh::Publisher>(
@@ -444,8 +467,42 @@ void AutowareGateway::toggle_operation_mode()
 
 void AutowareGateway::reset_initial_pose()
 {
+  if (impl_->preset_names.empty()) {return;}
+
+  impl_->preset_index =
+    (impl_->preset_index + 1) % static_cast<int>(impl_->preset_names.size());
+  const std::string & name = impl_->preset_names[impl_->preset_index];
+  const std::vector<double> & d = impl_->presets[impl_->preset_index];
+  if (d.size() < 4) {return;}
+
+  msgs::PoseWithCovarianceStamped pose;
+  auto t = std::chrono::system_clock::now().time_since_epoch();
+  auto sec = std::chrono::duration_cast<std::chrono::seconds>(t);
+  auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t - sec);
+  pose.header.stamp.sec = static_cast<int32_t>(sec.count());
+  pose.header.stamp.nanosec = static_cast<uint32_t>(ns.count());
+  pose.header.frame_id = "map";
+  pose.pose.pose.position.x = d[0];
+  pose.pose.pose.position.y = d[1];
+  pose.pose.pose.position.z = d[2];
+  const double yaw = d[3];
+  pose.pose.pose.orientation.z = std::sin(yaw * 0.5);
+  pose.pose.pose.orientation.w = std::cos(yaw * 0.5);
+  for (size_t i = 0; i < 36; ++i) {
+    pose.pose.covariance[i] = (i % 7 == 0) ? 0.1 : 0.0;
+  }
+
+  cdr::CdrWriter w;
+  cdr_serialize(pose, w.cdr());
+  try {
+    impl_->pub_initialpose->put(w.bytes());
+  } catch (const zenoh::ZException & e) {
+    static std::atomic_flag warned = ATOMIC_FLAG_INIT;
+    warn_once(warned, e.what());
+  }
+
   std::lock_guard<std::mutex> lock(impl_->info_mutex);
-  impl_->info_message = "[ManualControl]: reset_initial_pose unavailable (native)";
+  impl_->info_message = "[ManualControl]: Preset: " + name;
 }
 
 VehicleState AutowareGateway::get_vehicle_state() const

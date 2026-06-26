@@ -8,11 +8,14 @@ scope: v1
 arrival_timeout_ms: 500.0
 zenoh_config: ""           # zenoh config json5 path; empty = default
 
+# Initial-pose presets ([x, y, z, yaw] in the map frame). Pressing the reset key
+# cycles them and seeds /initialpose. "start" sits on a drivable lane of the
+# bundled sample map so a single press localises the demo; replace with poses
+# valid for your own map.
 init_pose:
   presets:
-    names: ["origin", "intersection"]
-    origin: [0.0, 0.0, 0.0, 0.0]
-    intersection: [15.0, 20.0, 0.0, 1.57]
+    names: ["start"]
+    start: [3765.09, 73743.88, 0.0, -0.5445]
 
 # Active drive modes, in cycle order. "stop" is required — it is the
 # initial and emergency mode.

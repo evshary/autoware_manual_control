@@ -18,8 +18,10 @@
           "/api/operation_mode/state",
           "/api/localization/initialization_state",
         ],
-        // Zenoh -> DDS: the control/gear commands and heartbeat the teleop publishes.
+        // Zenoh -> DDS: the control/gear commands, heartbeat, and the operator's
+        // initial-pose seed the teleop publishes.
         subscribers: [
+          "/initialpose",
           "/external/selected/control_cmd",
           "/external/selected/gear_cmd",
           "/external/local/heartbeat",
