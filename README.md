@@ -39,9 +39,9 @@ docker run --rm -it --net=host \
 # ros__parameters params-file before launching; this raw invocation bypasses
 # it, so it expects an already-wrapped /ManualControl: ros__parameters: file)
 docker run --rm -it --net=host \
-  -v $(pwd)/teleop_config.yaml:/autoware_manual_control_ws/teleop_config.yaml \
+  -v $(pwd)/config/teleop.yaml:/autoware_manual_control_ws/config/teleop.yaml \
   "${TELEOP_IMAGE:-ghcr.io/evshary/autoware_manual_control:latest}" \
-  ros2 run autoware_manual_control keyboard_control --ros-args --params-file teleop_config.yaml
+  ros2 run autoware_manual_control keyboard_control --ros-args --params-file config/teleop.yaml
 ```
 
 `TELEOP_IMAGE` can be overridden to point at a fork's CI build (e.g.
@@ -77,7 +77,7 @@ Cleans up all containers (including the `zenoh_bridge` service) and deletes temp
 ### 1. Driving Checklist
 Follow this sequence to start driving:
 
-1.  **Configure** (optional): pick how this operator commands the vehicle with `operator_mode` (`local` or `remote`) and tune modes in `teleop_config.yaml` (see [Configuration](#️-configuration)).
+1.  **Configure** (optional): pick how this operator commands the vehicle with `operator_mode` (`local` or `remote`) and tune modes in `config/teleop.yaml` (see [Configuration](#️-configuration)).
 2.  **Set Initial Pose**: Press `R` to cycle through the preset locations and initialize the vehicle on the map.
 3.  **Engage**: Press `Z` to switch from `STOP` to your configured drive mode. Entering the drive mode **self-engages** (via the AD-API `enable_autoware_control`) — there is no separate engage step.
 4.  **Shift Gear**: Press `X` for Drive (D) or `C` for Reverse (R).
@@ -118,7 +118,13 @@ All per-mode tuning lives in the config (see below).
 
 ## ⚙️ Configuration
 
-Behavior is customized via `teleop_config.yaml`; a fully-commented template ships as [`teleop_config.example.yaml`](teleop_config.example.yaml). Key parameters:
+All configuration lives under [`config/`](config). Behavior is customized via `config/teleop.yaml`; a fully-commented template ships as [`config/teleop.example.yaml`](config/teleop.example.yaml). Copy it to your own local config (gitignored) before tuning:
+
+```bash
+cp config/teleop.example.yaml config/teleop.yaml
+```
+
+Key parameters:
 
 | Parameter | Meaning |
 | :-------- | :------ |
@@ -128,7 +134,7 @@ Behavior is customized via `teleop_config.yaml`; a fully-commented template ship
 | `physics:` / `cruise:` / `stop:` | Per-mode tuning blocks (speeds, accel/brake limits, steering rates, ...). Each mode reads its own block. |
 | `init_pose.presets` | Named poses (`[x, y, z, yaw]`) cycled by the `R` key. |
 
-`teleop_config.yaml` is plain nested YAML (no ROS envelope):
+`config/teleop.yaml` is plain nested YAML (no ROS envelope):
 
 ```yaml
 operator_mode: remote          # or "local"
@@ -136,7 +142,7 @@ modes: ["stop", "physics", "cruise"]
 control_rate_hz: 60.0
 physics:
   max_speed: 27.78
-  # ... see teleop_config.example.yaml for the full set
+  # ... see config/teleop.example.yaml for the full set
 ```
 
 `run_teleop.sh` feeds this file to the native binary via `--config`, and wraps it into a `/ManualControl: ros__parameters:` params-file for the rclcpp node.
@@ -221,7 +227,7 @@ colcon build --cmake-args -DTELEOP_WITH_KEYBOARD=OFF -DTELEOP_WITH_ZENOH=ON
 #### Run the Node
 
 ```bash
-ros2 run autoware_manual_control zenoh_control --config teleop_config.yaml
+ros2 run autoware_manual_control zenoh_control --config config/teleop.yaml
 ```
 
 #### Remote interface
@@ -369,7 +375,7 @@ The smallest worked example is [`src/modes/stop_mode.hpp`](src/modes/stop_mode.h
     *   a `struct Params { ... };` plus `static Params loadParams(const ParameterReader &reader)` that reads its tuning from config (use the reader's `read<T>(name, default)` accessors, e.g. `reader.read<float>("<name>.gain", p.gain)` — see `core/parameter_reader.hpp`),
     *   a constructor taking `const Params &`, and the strategy method `ControlCommand update(float dt, const Intent &intent, const VehicleState &vehicle_state)` (optionally `onEnter` / `onExit` / `getStatusString`).
 2.  **Register** it: add one line `register_mode<YourDriveMode>(factory, reader);` to `register_all_modes` in `src/core/register_modes.hpp`.
-3.  **Enable** it: add its `kName` to the `modes:` list in `teleop_config.yaml` (and a tuning block if it has params).
+3.  **Enable** it: add its `kName` to the `modes:` list in `config/teleop.yaml` (and a tuning block if it has params).
 
 That is the whole change — one mode file, one register line, one config entry. No enum, no factory edits, no loop changes.
 

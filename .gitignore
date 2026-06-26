@@ -2,5 +2,6 @@ build
 install
 log
 tmp
-# Local copy, seeded from teleop_config.example.yaml on first run.
-teleop_config.yaml
+# Local copies, seeded from the matching config/*.example.* on first run.
+config/teleop.yaml
+config/zenoh-client.json5

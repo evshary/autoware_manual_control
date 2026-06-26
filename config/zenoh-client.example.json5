@@ -1,0 +1,7 @@
+{
+  mode: "peer",
+  connect: {
+    endpoints: ["tcp/host.docker.internal:7447"]
+  },
+  scouting: { multicast: { enabled: false }, gossip: { enabled: false } }
+}

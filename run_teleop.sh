@@ -41,33 +41,38 @@ docker compose $COMPOSE_OPTS exec -it teleop bash -c "
         echo -e '\033[1;33m[Info]\033[0m Dev Mode: Checking for updates and compiling for $TRANSPORT...' && \
         colcon build --cmake-args $CMAKE_ARGS && \
         source install/setup.bash && \
+        TELEOP_CFG='src/autoware_manual_control/config/teleop.example.yaml' && \
+        if [ -f src/autoware_manual_control/config/teleop.yaml ]; then \
+            TELEOP_CFG='src/autoware_manual_control/config/teleop.yaml'; \
+        else \
+            echo -e '\033[1;33m[Info]\033[0m using config/teleop.example.yaml (no user config).'; \
+        fi && \
         if [ \"$TRANSPORT\" = \"zenoh\" ]; then \
-            SCOUTING='' && \
-            if [ \"$ISOLATED\" = \"true\" ]; then \
-                SCOUTING=',
-  scouting: { multicast: { enabled: false }, gossip: { enabled: false } }'; \
+            ZENOH_CLIENT_SRC='src/autoware_manual_control/config/zenoh-client.example.json5' && \
+            if [ -f src/autoware_manual_control/config/zenoh-client.json5 ]; then \
+                ZENOH_CLIENT_SRC='src/autoware_manual_control/config/zenoh-client.json5'; \
             fi && \
-            cat > /tmp/zenoh_client.json5 << EOF
-{
-  mode: \"peer\",
-  connect: {
-    endpoints: [\"tcp/host.docker.internal:7447\"]
-  }\$SCOUTING
-}
-EOF
-            cp src/autoware_manual_control/teleop_config.yaml /tmp/teleop_config_zenoh.yaml && \
+            cp \$ZENOH_CLIENT_SRC /tmp/zenoh_client.json5 && \
+            if [ \"$ISOLATED\" != \"true\" ]; then \
+                sed -i '/scouting:/d' /tmp/zenoh_client.json5; \
+            fi && \
+            cp \$TELEOP_CFG /tmp/teleop_config_zenoh.yaml && \
             sed -i 's|zenoh_config: \"\"|zenoh_config: \"/tmp/zenoh_client.json5\"|g' /tmp/teleop_config_zenoh.yaml && \
             PARAMS_ARG='--config /tmp/teleop_config_zenoh.yaml'; \
         else \
-            { printf '/ManualControl:\n  ros__parameters:\n'; sed 's/^/    /' src/autoware_manual_control/teleop_config.yaml; } > /tmp/teleop_config_ros.yaml && \
+            { printf '/ManualControl:\n  ros__parameters:\n'; sed 's/^/    /' \$TELEOP_CFG; } > /tmp/teleop_config_ros.yaml && \
             PARAMS_ARG='--ros-args --params-file /tmp/teleop_config_ros.yaml'; \
         fi; \
-    elif [ -f teleop_config.yaml ]; then \
-        echo -e '\033[1;33m[Info]\033[0m Release Mode: Custom config found.' && \
-        { printf '/ManualControl:\n  ros__parameters:\n'; sed 's/^/    /' teleop_config.yaml; } > /tmp/teleop_config_ros.yaml && \
-        PARAMS_ARG='--ros-args --params-file /tmp/teleop_config_ros.yaml'; \
     else \
-        echo -e '\033[1;33m[Info]\033[0m Release Mode: Using default parameters.' ; \
+        TELEOP_CFG='config/teleop.example.yaml' && \
+        if [ -f config/teleop.yaml ]; then \
+            echo -e '\033[1;33m[Info]\033[0m Release Mode: Custom config found.' && \
+            TELEOP_CFG='config/teleop.yaml'; \
+        else \
+            echo -e '\033[1;33m[Info]\033[0m Release Mode: using config/teleop.example.yaml (no user config).'; \
+        fi && \
+        { printf '/ManualControl:\n  ros__parameters:\n'; sed 's/^/    /' \$TELEOP_CFG; } > /tmp/teleop_config_ros.yaml && \
+        PARAMS_ARG='--ros-args --params-file /tmp/teleop_config_ros.yaml'; \
     fi && \
 
     if [ \"$ISOLATED\" = \"true\" ]; then \

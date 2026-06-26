@@ -41,8 +41,8 @@ services:
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
       - ROS_DISTRO=humble
     volumes:
-      - ./config/zenoh-bridge-ros2dds-conf.json5:/config/zenoh-bridge-ros2dds-conf.json5:ro
-    command: ["-n", "/v1", "-c", "/config/zenoh-bridge-ros2dds-conf.json5"]
+      - ./config/zenoh-bridge.json5:/config/zenoh-bridge.json5:ro
+    command: ["-n", "/v1", "-c", "/config/zenoh-bridge.json5"]
 
 volumes:
   autoware_map:
