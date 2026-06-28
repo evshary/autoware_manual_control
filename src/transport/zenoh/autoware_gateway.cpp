@@ -367,6 +367,17 @@ AutowareGateway::~AutowareGateway()
   impl_->service_cv.notify_all();
   if (impl_->service_thread.joinable()) {impl_->service_thread.join();}
   if (impl_->heartbeat_thread.joinable()) {impl_->heartbeat_thread.join();}
+
+  impl_->sub_velocity.reset();
+  impl_->sub_gear.reset();
+  impl_->sub_steering.reset();
+  impl_->sub_op_mode.reset();
+  impl_->sub_loc_state.reset();
+  impl_->pub_control.reset();
+  impl_->pub_gear.reset();
+  impl_->pub_heartbeat.reset();
+  impl_->pub_initialpose.reset();
+  impl_->session.reset();
 }
 
 void AutowareGateway::spin_some() {}
