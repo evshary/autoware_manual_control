@@ -1,6 +1,6 @@
 #include "core/autoware_gateway.hpp"
 #include "core/parameter_reader.hpp"
-#include "ros/manual_control_node.hpp"
+#include "transport/rclcpp/manual_control_node.hpp"
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
 
