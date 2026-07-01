@@ -10,7 +10,18 @@ option(TELEOP_WITH_ZENOH "Build zenoh_control" OFF)
 set(TELEOP_AUTOWARE_TRANSPORT "rclcpp" CACHE STRING "Autoware transport choice: rclcpp | native_zenoh")
 set_property(CACHE TELEOP_AUTOWARE_TRANSPORT PROPERTY STRINGS rclcpp native_zenoh)
 
-find_package(ament_cmake REQUIRED)
+# ament_cmake is the colcon/ROS packaging layer. The native_zenoh transport
+# builds as a plain CMake project (CMake + a C++ compiler + Fast-CDR, no ROS), so
+# ament is optional -- and skipped when absent -- for it; every other path needs
+# it.
+find_package(ament_cmake QUIET)
+if(NOT ament_cmake_FOUND AND NOT TELEOP_AUTOWARE_TRANSPORT STREQUAL "native_zenoh")
+  message(FATAL_ERROR "ament_cmake is required for the ${TELEOP_AUTOWARE_TRANSPORT} transport")
+endif()
+if(NOT ament_cmake_FOUND)
+  option(BUILD_TESTING "Build the tests" ON)
+  enable_testing()
+endif()
 
 if(NOT TELEOP_WITH_KEYBOARD AND NOT TELEOP_WITH_ZENOH)
   message(WARNING "No entry point selected; set TELEOP_WITH_KEYBOARD or TELEOP_WITH_ZENOH")
@@ -58,25 +69,16 @@ if(TELEOP_AUTOWARE_TRANSPORT STREQUAL "rclcpp")
   endif()
 endif()
 
-# native_zenoh transport: the codec is rosidl's own typesupport_fastrtps_cpp,
-# regenerated from the installed message .idl under this project's namespace and
-# compiled into the executable. The wire bytes are byte-perfect by construction
-# (the same functions rmw_fastrtps calls); the prebuilt rosidl/message .so are
-# never linked, so the binary needs only zenoh + Fast-CDR (static).
+# native_zenoh transport: compile the committed rosidl_typesupport_fastrtps_cpp codec
+# under src/transport/zenoh/generated straight into the binary (no ROS, no message
+# packages -- only zenoh + static Fast-CDR). Regenerate with tools/vendor_idl.sh after
+# an Autoware message bump; the CI golden-drift check flags when that is due.
 if(TELEOP_AUTOWARE_TRANSPORT STREQUAL "native_zenoh")
-  find_package(Python3 REQUIRED COMPONENTS Interpreter)
-
-  # find_package needs the ament prefixes on CMAKE_PREFIX_PATH; some setup.bash
-  # (Autoware's) export AMENT_PREFIX_PATH only, so mirror it here.
-  if(DEFINED ENV{AMENT_PREFIX_PATH})
-    string(REPLACE ":" ";" _ament_prefixes "$ENV{AMENT_PREFIX_PATH}")
-    list(APPEND CMAKE_PREFIX_PATH ${_ament_prefixes})
-  endif()
+  set(_gen_dir ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/zenoh/generated)
 
   # Fast-CDR: pinned, static, PIC, no tests; folds into the target (no
-  # libfastcdr.so). Declared BEFORE the rosidl find_package calls, which import a
-  # SHARED fastcdr target of the same name -- the static one must win first. The
-  # overrides are unset afterwards so a later option() does not warn.
+  # libfastcdr.so). BUILD_TESTING is forced off across makeavailable so Fast-CDR
+  # skips its own tests, then restored for this project's tests.
   include(FetchContent)
   set(BUILD_SHARED_LIBS OFF)
   set(BUILD_TESTING OFF)
@@ -89,138 +91,37 @@ if(TELEOP_AUTOWARE_TRANSPORT STREQUAL "native_zenoh")
   unset(BUILD_TESTING)
   unset(CMAKE_POSITION_INDEPENDENT_CODE)
 
-  find_package(rosidl_generator_cpp REQUIRED)
-  find_package(rosidl_typesupport_fastrtps_cpp REQUIRED)
-  find_package(rosidl_runtime_c REQUIRED)
-  find_package(rosidl_runtime_cpp REQUIRED)
-  find_package(rosidl_typesupport_interface REQUIRED)
-
-  # The msg packages whose .idl are this transport's wire contract. WHICH files
-  # (intent) lives here; the CONTENT comes from the installed package share dirs.
-  set(TELEOP_MSG_IDL
-    builtin_interfaces/msg/Time.idl
-    std_msgs/msg/Header.idl
-    geometry_msgs/msg/Point.idl
-    geometry_msgs/msg/Quaternion.idl
-    geometry_msgs/msg/Pose.idl
-    geometry_msgs/msg/PoseWithCovariance.idl
-    geometry_msgs/msg/PoseWithCovarianceStamped.idl
-    autoware_control_msgs/msg/Lateral.idl
-    autoware_control_msgs/msg/Longitudinal.idl
-    autoware_control_msgs/msg/Control.idl
-    autoware_vehicle_msgs/msg/GearCommand.idl
-    autoware_vehicle_msgs/msg/GearReport.idl
-    autoware_vehicle_msgs/msg/SteeringReport.idl
-    autoware_vehicle_msgs/msg/VelocityReport.idl
-    autoware_adapi_v1_msgs/msg/LocalizationInitializationState.idl
-    autoware_adapi_v1_msgs/msg/ManualOperatorHeartbeat.idl
-    autoware_adapi_v1_msgs/msg/OperationModeState.idl
-    autoware_adapi_v1_msgs/msg/ResponseStatus.idl
-    autoware_adapi_v1_msgs/srv/ChangeOperationMode.idl)
-
-  # test_msgs is a fixed test corpus vendored under test/test_msgs_idl (a
-  # shape-coverage fixture, drift-irrelevant; the build needs no installed
-  # ros-humble-test-msgs). It exercises every field SHAPE rosidl tests (all
-  # int widths, float, bool, byte/char, unbounded + bounded + empty strings,
-  # fixed arrays incl. nested and the trailing alignment_check field, bounded +
-  # unbounded sequences, single and multi-level nesting, constants, defaults,
-  # empty), run through the SAME stage_idl -> rosidl codec path the production
-  # messages use so the codec is certified on every shape -- not only the shapes
-  # the production messages happen to use. Compiled into test_cdr only. WStrings
-  # is excluded: rmw_cyclonedds encodes wstring UTF-32 while fastrtps uses
-  # UTF-16, an upstream incompatibility; no production message uses wstring.
-  set(TELEOP_TEST_IDL
-    test_msgs/msg/BasicTypes.idl
-    test_msgs/msg/Constants.idl
-    test_msgs/msg/Defaults.idl
-    test_msgs/msg/Strings.idl
-    test_msgs/msg/Empty.idl
-    test_msgs/msg/Nested.idl
-    test_msgs/msg/Arrays.idl
-    test_msgs/msg/BoundedSequences.idl
-    test_msgs/msg/UnboundedSequences.idl
-    test_msgs/msg/MultiNested.idl)
-
-  set(TELEOP_ALL_IDL ${TELEOP_MSG_IDL})
-  if(BUILD_TESTING)
-    list(APPEND TELEOP_ALL_IDL ${TELEOP_TEST_IDL})
-  endif()
-
-  # rosidl namespaces the generated types after the consuming project, so the
-  # module declared inside each .idl must match it. Stage the installed .idl
-  # (content = the deployed source of truth, no vendored copy) into the build
-  # tree under this project's namespace, then feed those to the generator.
-  set(_share_args "")
-  foreach(rel ${TELEOP_ALL_IDL})
-    string(REGEX REPLACE "/.*" "" pkg "${rel}")
-    if(pkg STREQUAL "test_msgs")
-      # The vendored fixtures, not an installed package share dir.
-      set(_share "${CMAKE_CURRENT_SOURCE_DIR}/test/test_msgs_idl")
-    else()
-      if(NOT ${pkg}_FOUND)
-        find_package(${pkg} REQUIRED)
-      endif()
-      get_filename_component(_share "${${pkg}_DIR}/.." ABSOLUTE)
-    endif()
-    list(APPEND _share_args "${pkg}=${_share}")
-  endforeach()
-  list(REMOVE_DUPLICATES _share_args)
-
-  set(_stage_dir "${CMAKE_CURRENT_BINARY_DIR}/idl")
-  execute_process(
-    COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tools/stage_idl.py"
-            ${PROJECT_NAME} "${_stage_dir}" ${_share_args} -- ${TELEOP_ALL_IDL}
-    OUTPUT_VARIABLE _staged_idl RESULT_VARIABLE _stage_rc)
-  if(NOT _stage_rc EQUAL 0)
-    message(FATAL_ERROR "stage_idl.py failed")
-  endif()
-
-  # The staged leaf names of the test-only fixtures, so their codec .cpp can be
-  # routed to test_cdr alone (never the shipped binary).
-  set(_test_leaves "")
-  foreach(rel ${TELEOP_TEST_IDL})
-    string(REGEX REPLACE "^[^/]*/" "" _leaf "${rel}")
-    list(APPEND _test_leaves "${_leaf}")
-  endforeach()
-
-  # Map each staged .idl to its interface tuple and to the codec .cpp the
-  # generator emits (deterministic: snake_case of the stem under detail/).
-  set(_idl_tuples "")
+  # The shipped binary carries exactly these production codecs -- the wire contract,
+  # kept in step with TELEOP_MSG_IDL in tools/regen/CMakeLists.txt. An allow-list, not
+  # a denylist: a stem missing here routes its codec to test-only and the binary fails
+  # to link, so a drop is never silent; any other vendored codec (the test_msgs shape
+  # corpus) goes to test_cdr.
+  set(TELEOP_PROD_MSG_STEMS
+      time header point quaternion pose pose_with_covariance
+      pose_with_covariance_stamped lateral longitudinal control gear_command
+      gear_report steering_report velocity_report
+      localization_initialization_state manual_operator_heartbeat
+      operation_mode_state response_status change_operation_mode)
+  file(GLOB_RECURSE _codec_all CONFIGURE_DEPENDS
+       ${_gen_dir}/autoware_manual_control/*/detail/dds_fastrtps/*__type_support.cpp)
   set(TELEOP_CODEC_SRC "")
   set(TELEOP_TEST_CODEC_SRC "")
-  set(_codec_dir "${CMAKE_CURRENT_BINARY_DIR}/rosidl_typesupport_fastrtps_cpp/${PROJECT_NAME}")
-  foreach(s ${_staged_idl})
-    list(APPEND _idl_tuples "${_stage_dir}:${s}")
-    get_filename_component(_kind "${s}" DIRECTORY)
-    get_filename_component(_stem "${s}" NAME_WE)
-    # Mirror rosidl's convert_camel_case_to_lower_case_underscore (two steps),
-    # so acronym names (e.g. HTTPResponse -> http_response) match the emitted file.
-    string(REGEX REPLACE "(.)([A-Z][a-z]+)" "\\1_\\2" _snake "${_stem}")
-    string(REGEX REPLACE "([a-z0-9])([A-Z])" "\\1_\\2" _snake "${_snake}")
-    string(TOLOWER "${_snake}" _snake)
-    set(_cpp "${_codec_dir}/${_kind}/detail/dds_fastrtps/${_snake}__type_support.cpp")
-    if("${s}" IN_LIST _test_leaves)
-      list(APPEND TELEOP_TEST_CODEC_SRC "${_cpp}")
+  foreach(_c ${_codec_all})
+    get_filename_component(_stem ${_c} NAME)
+    string(REGEX REPLACE "__type_support\\.cpp$" "" _stem "${_stem}")
+    if(_stem IN_LIST TELEOP_PROD_MSG_STEMS)
+      list(APPEND TELEOP_CODEC_SRC ${_c})
     else()
-      list(APPEND TELEOP_CODEC_SRC "${_cpp}")
+      list(APPEND TELEOP_TEST_CODEC_SRC ${_c})
     endif()
   endforeach()
 
-  rosidl_generate_interfaces(${PROJECT_NAME} ${_idl_tuples}
-    SKIP_INSTALL SKIP_GROUP_MEMBERSHIP_CHECK)
+  # The codec is machine-generated and compiled into our targets; keep the strict
+  # first-party warnings off it at the source level.
+  set_source_files_properties(${TELEOP_CODEC_SRC} ${TELEOP_TEST_CODEC_SRC}
+      PROPERTIES COMPILE_OPTIONS "-w")
 
-  # The codec .cpp are compiled into the executable directly; the rosidl-built
-  # library (which PUBLIC-links rmw/rosidl_runtime) stays out of the build.
-  set_target_properties(${PROJECT_NAME}__rosidl_typesupport_fastrtps_cpp
-                        PROPERTIES EXCLUDE_FROM_ALL TRUE)
-
-  set(TELEOP_CODEC_INCLUDE
-    "${CMAKE_CURRENT_BINARY_DIR}/rosidl_generator_cpp"
-    "${CMAKE_CURRENT_BINARY_DIR}/rosidl_typesupport_fastrtps_cpp"
-    ${rosidl_runtime_c_INCLUDE_DIRS}
-    ${rosidl_runtime_cpp_INCLUDE_DIRS}
-    ${rosidl_typesupport_interface_INCLUDE_DIRS}
-    ${rosidl_typesupport_fastrtps_cpp_INCLUDE_DIRS})
+  set(TELEOP_CODEC_INCLUDE ${_gen_dir})
 
   set(TELEOP_GATEWAY_SRC
     src/transport/zenoh/autoware_gateway.cpp
@@ -248,7 +149,6 @@ if(TELEOP_AUTOWARE_TRANSPORT STREQUAL "native_zenoh")
   if(TELEOP_WITH_KEYBOARD)
     add_executable(keyboard_control
       src/keyboard_control.cpp src/core/drive_mode_factory.cpp ${TELEOP_GATEWAY_SRC})
-    add_dependencies(keyboard_control ${PROJECT_NAME})
     target_include_directories(keyboard_control PRIVATE src ${TELEOP_CODEC_INCLUDE} ${YAML_INCLUDE_DIR})
     target_link_libraries(keyboard_control zenohcxx::zenohc fastcdr ${YAML_STATIC_LIB})
     install(TARGETS keyboard_control DESTINATION lib/${PROJECT_NAME})
@@ -257,37 +157,52 @@ if(TELEOP_AUTOWARE_TRANSPORT STREQUAL "native_zenoh")
   if(TELEOP_WITH_ZENOH)
     add_executable(zenoh_control
       src/zenoh_control.cpp src/core/drive_mode_factory.cpp ${TELEOP_GATEWAY_SRC})
-    add_dependencies(zenoh_control ${PROJECT_NAME})
     target_include_directories(zenoh_control PRIVATE src ${TELEOP_CODEC_INCLUDE} ${YAML_INCLUDE_DIR})
     target_link_libraries(zenoh_control nlohmann_json::nlohmann_json zenohcxx::zenohc fastcdr ${YAML_STATIC_LIB})
     install(TARGETS zenoh_control DESTINATION lib/${PROJECT_NAME})
   endif()
 endif()
 
+# Package the config templates so the release image (which copies only install/)
+# can read them from run_teleop.sh.
+install(DIRECTORY config/ DESTINATION share/${PROJECT_NAME}/config)
+
 if(BUILD_TESTING)
-  find_package(ament_lint_auto REQUIRED)
-  set(ament_cmake_copyright_FOUND TRUE)
-  ament_lint_auto_find_test_dependencies()
+  if(ament_cmake_FOUND)
+    find_package(ament_lint_auto REQUIRED)
+    set(ament_cmake_copyright_FOUND TRUE)
+    ament_lint_auto_find_test_dependencies()
+  endif()
 
   # Byte-perfect CDR gate for the native_zenoh transport. Links the production
-  # codec plus the test_msgs shape-coverage codec (generated only under
-  # BUILD_TESTING); the shipped binary carries neither.
+  # codec plus the test_msgs shape-coverage codec; the shipped binary carries
+  # neither test corpus. ament_add_gtest under colcon, plain gtest standalone.
   if(TELEOP_AUTOWARE_TRANSPORT STREQUAL "native_zenoh")
-    find_package(ament_cmake_gtest REQUIRED)
-    ament_add_gtest(test_cdr test/test_cdr.cpp
+    set(_test_cdr_src test/test_cdr.cpp
       src/transport/zenoh/typesupport_stub.cpp
       ${TELEOP_CODEC_SRC} ${TELEOP_TEST_CODEC_SRC})
-    add_dependencies(test_cdr ${PROJECT_NAME})
+    if(ament_cmake_FOUND)
+      find_package(ament_cmake_gtest REQUIRED)
+      ament_add_gtest(test_cdr ${_test_cdr_src})
+      ament_add_gtest(test_param_reader test/test_param_reader.cpp
+        src/transport/zenoh/parameter_reader.cpp)
+    else()
+      find_package(GTest REQUIRED)
+      add_executable(test_cdr ${_test_cdr_src})
+      add_test(NAME test_cdr COMMAND test_cdr)
+      target_link_libraries(test_cdr GTest::gtest GTest::gtest_main)
+      add_executable(test_param_reader test/test_param_reader.cpp
+        src/transport/zenoh/parameter_reader.cpp)
+      add_test(NAME test_param_reader COMMAND test_param_reader)
+      target_link_libraries(test_param_reader GTest::gtest GTest::gtest_main)
+    endif()
     target_include_directories(test_cdr PRIVATE src ${TELEOP_CODEC_INCLUDE})
     target_link_libraries(test_cdr fastcdr)
-
-    # Contract gate for the native ParameterReader: dotted keys, type fallback,
-    # empty-string semantics, and quote/comment handling.
-    ament_add_gtest(test_param_reader test/test_param_reader.cpp
-      src/transport/zenoh/parameter_reader.cpp)
     target_include_directories(test_param_reader PRIVATE src ${YAML_INCLUDE_DIR})
     target_link_libraries(test_param_reader ${YAML_STATIC_LIB})
   endif()
 endif()
 
-ament_package()
+if(ament_cmake_FOUND)
+  ament_package()
+endif()
