@@ -27,7 +27,7 @@ std::vector<std::string> DriveModeFactory::availableNames() const {
 
 void DriveModeFactory::setActiveOrder(const std::vector<std::string> &order) {
   if (order.empty()) {
-    throw std::runtime_error("[modes] 'modes' is empty; need at least \"stop\"");
+    throw std::runtime_error(kEmptyModesError);
   }
   if (std::find(order.begin(), order.end(), "stop") == order.end()) {
     throw std::runtime_error(

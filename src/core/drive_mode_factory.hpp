@@ -24,6 +24,11 @@ public:
   void setActiveOrder(const std::vector<std::string> &order); // validates; requires "stop"
   const std::vector<std::string> &activeOrder() const;
 
+  // Also raised by the rclcpp transport, which rejects a typeless empty `modes: []`
+  // at node construction -- before setActiveOrder can run -- and translates it here.
+  static constexpr const char *kEmptyModesError =
+      "[modes] 'modes' is empty; need at least \"stop\"";
+
   std::unique_ptr<DriveMode> createMode(const std::string &name) const;
 
 private:

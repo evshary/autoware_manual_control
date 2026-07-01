@@ -4,9 +4,9 @@
 //
 // The codec bodies are rosidl-generated, so the wire bytes are correct by
 // construction. What this gate certifies is OUR additions around them:
-//  (a) tools/stage_idl.py's namespace rewrite yields a codec whose bytes match
-//      rmw across EVERY field SHAPE, not only the shapes the ten production
-//      messages happen to use today;
+//  (a) tools/regen/stage_idl.py's namespace rewrite yields a codec whose bytes match
+//      rmw across EVERY field SHAPE, not only the shapes the production messages
+//      happen to use today;
 //  (b) the src/transport/zenoh/cdr.hpp Cdr helper (encapsulation + buffer + length)
 //      is rmw-identical in both directions;
 //  (c) the decode direction is rmw-identical -- fed EXTERNAL reference bytes,
@@ -20,9 +20,10 @@
 //     length is asserted EXACT (no trailing-slack window a wrong final member
 //     could hide in). Regenerate with capture_golden.py after an Autoware msg
 //     bump; capture_golden.py --check diffs the live wire against these.
-//  2. The ros2/test_interface_files test_msgs corpus (vendored .idl resolved by
-//     CMake; stable fixtures). Run through the SAME stage_idl -> rosidl codec ->
-//     cdr.hpp path the production codec uses, so stage_idl is proven on every
+//  2. The ros2/test_interface_files test_msgs corpus (vendored the same way as the
+//     production codec; stable fixtures). Generated through the SAME
+//     tools/regen/stage_idl.py -> rosidl codec -> cdr.hpp path, so stage_idl is
+//     proven on every
 //     shape: all int widths signed/unsigned, float32/64, bool, byte, char,
 //     unbounded + bounded + empty strings, fixed arrays incl. nested and the
 //     trailing alignment_check member, bounded + unbounded sequences, single and

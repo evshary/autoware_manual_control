@@ -162,10 +162,15 @@ T ParameterReader::read(const std::string & name, const T & default_val) const
 {
   const std::vector<std::string> * v = impl_->params.lookup(name);
   if constexpr (std::is_same_v<T, std::vector<std::string>>) {
-    return (v && !v->empty()) ? *v : default_val;
+    // A present key wins even when empty: `key: []` yields an empty vector (so an
+    // empty `modes:` reaches the factory and aborts there). Only an absent key
+    // falls back to the default.
+    return v ? *v : default_val;
   } else if constexpr (std::is_same_v<T, std::vector<double>>) {
-    // Sequences are stored as strings; convert each element. Any non-numeric
-    // element falls the whole read back to the default (same contract as scalars).
+    // Sequences are stored as strings; convert each element. Unlike the string
+    // vector above, an empty `key: []` falls back to the default: a numeric
+    // sequence (a pose preset) has no meaningful empty value, so an empty one reads
+    // as unset. A non-numeric element also falls back (same contract as scalars).
     if (!v || v->empty()) {return default_val;}
     std::vector<double> out;
     out.reserve(v->size());

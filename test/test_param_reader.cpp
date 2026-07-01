@@ -1,8 +1,7 @@
-// Contract gate for the native (zenoh) ParameterReader. Exercises the libyaml
-// DOM flattening and the read<T> contract that the teleop owns -- dotted keys,
-// type fallback, empty-string semantics -- independently of any YAML library.
-// The config is plain nested YAML (no ros__parameters envelope); the binary
-// takes it via --config.
+// Contract gate for the native (zenoh) ParameterReader: the libyaml DOM flattening
+// and the read<T> contract the teleop owns -- dotted keys, type fallback, empty and
+// present-but-empty semantics. The config is plain nested YAML (no ros__parameters
+// envelope); the binary takes it via --config.
 
 #include "core/parameter_reader.hpp"
 #include "transport/zenoh/cli_params.hpp"
@@ -157,4 +156,20 @@ TEST(ParamReader, MissingFileAllDefaults) {
 
   auto r2 = reader_no_file();
   EXPECT_EQ(r2->read<std::string>("scope", std::string{"DEF"}), "DEF");
+}
+
+// 11. Present-but-empty semantics. A string sequence present as `[]` wins over the
+//     default (so an empty `modes:` reaches the factory and aborts there); an absent
+//     key falls back. A numeric sequence instead treats present-empty as unset.
+TEST(ParamReader, PresentEmptySequence) {
+  auto present = reader_for("modes: []\n");
+  EXPECT_TRUE(present->read<std::vector<std::string>>("modes", {"stop"}).empty());
+
+  auto absent = reader_for("scope: v1\n");
+  auto def = absent->read<std::vector<std::string>>("modes", {"stop"});
+  ASSERT_EQ(def.size(), 1u);
+  EXPECT_EQ(def[0], "stop");
+
+  auto pose = reader_for("start: []\n");
+  EXPECT_EQ(pose->read<std::vector<double>>("start", {1.0, 2.0}).size(), 2u);
 }

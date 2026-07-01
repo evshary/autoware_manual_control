@@ -57,7 +57,8 @@ public:
   }
 
 private:
-  void switchMode(const std::string &type, const VehicleState &state) {
+  // By value: the resume call passes previous_type_, which this reassigns.
+  void switchMode(std::string type, const VehicleState &state) {
     if (active_mode_) {
       active_mode_->onExit();
     }

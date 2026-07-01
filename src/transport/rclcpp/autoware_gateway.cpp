@@ -1,7 +1,11 @@
 #include "core/autoware_gateway.hpp"
+#include "core/drive_mode_factory.hpp"
 #include "core/parameter_reader.hpp"
 #include "transport/rclcpp/manual_control_node.hpp"
 #include <memory>
+#include <stdexcept>
+#include <string>
+#include <rclcpp/exceptions/exceptions.hpp>
 #include <rclcpp/rclcpp.hpp>
 
 namespace autoware::manual_control
@@ -15,7 +19,19 @@ struct AutowareGateway::Impl
   std::shared_ptr<ManualControlNode> node;
   Impl()
   {
-    node = std::make_shared<ManualControlNode>();
+    // rclcpp rejects a typeless `modes: []` override while building the parameter
+    // overrides -- at construction, before any value is read -- so this is the only
+    // place that misconfiguration surfaces. Translate just that case into the same
+    // empty-modes guidance the value path raises; re-throw anything else unchanged.
+    try {
+      node = std::make_shared<ManualControlNode>();
+    } catch (const rclcpp::exceptions::InvalidParameterValueException & e) {
+      constexpr const char * kModesParam = "modes";
+      if (std::string(e.what()).find(std::string("'") + kModesParam + "'") != std::string::npos) {
+        throw std::runtime_error(DriveModeFactory::kEmptyModesError);
+      }
+      throw;
+    }
   }
 };
 
