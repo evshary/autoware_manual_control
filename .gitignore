@@ -2,6 +2,7 @@ build
 install
 log
 tmp
+book/book/
 # Local copies, seeded from the matching config/*.example.* on first run.
 config/teleop.yaml
 config/zenoh-client.json5

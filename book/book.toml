@@ -1,0 +1,16 @@
+[book]
+title = "Autoware Manual Control"
+description = "A modular manual-driving node for Autoware, organised around two independent axes: operator I/O and Autoware transport."
+authors = ["ChenYing Kuo", "Tzu-Ching Yang"]
+language = "en"
+src = "src"
+
+[output.html]
+default-theme = "rust"
+git-repository-url = "https://github.com/evshary/autoware_manual_control"
+additional-js = ["mermaid.min.js", "mermaid-init.js"]
+
+[preprocessor]
+
+[preprocessor.mermaid]
+command = "mdbook-mermaid"

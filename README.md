@@ -1,275 +1,138 @@
-# Autoware Manual Controller
+# Autoware Manual Control
 
-A robust, modular keyboard teleoperation node designed for Autoware.universe.
-This project provides high-precision vehicle control, supporting physics-based inertial driving experiences and stable cruise control functionalities.
+A modular manual-driving node for [Autoware](https://github.com/autowarefoundation/autoware.universe): drop it into a ROS 2 workspace, drive an Autoware vehicle from the keyboard in minutes, and — when you are ready — drive it from your own UI over [Zenoh](https://zenoh.io/) instead, with no change to the control or mode logic.
 
-🎥 **[Watch the Demo Video](https://www.youtube.com/watch?v=Pyi3uyONG8A)**
+🎥 **[Watch the demo video](https://www.youtube.com/watch?v=Pyi3uyONG8A)**
 
-## 🚀 Quick Start (Release Container)
+## Two independent axes
 
-The fastest way to run the controller without building from source.
+The node is organised around two axes that vary **independently**. Zenoh shows up on both — but they are different things and you choose them separately.
 
-### 0. Prerequisites
-The Autoware container (started via compose) requires a map volume. Run this **once** to populate it:
+- **Operator I/O** — how intent reaches the node and how telemetry leaves it. Selected at build time by the entry-point flags `TELEOP_WITH_KEYBOARD` (the `keyboard_control` executable) and `TELEOP_WITH_ZENOH` (the `zenoh_control` executable).
+  - **keyboard** — a local terminal reads `WASD` and friends from stdin (intent in).
+  - **console** — the same terminal renders live vehicle telemetry (telemetry out). Keyboard and console are the two halves of the local terminal operator and are built together by `TELEOP_WITH_KEYBOARD`.
+  - **zenoh** — intent and telemetry are exchanged as JSON over Zenoh keys, so any client (a browser UI, a script, another machine) can drive and observe. Built by `TELEOP_WITH_ZENOH`.
+- **Autoware transport** — how the node talks to Autoware. Selected by the CMake variable `TELEOP_AUTOWARE_TRANSPORT`.
+  - **`rclcpp`** (default) — native ROS 2: publishers, subscribers and AD-API service calls. Build it into any Autoware workspace as an ordinary ROS node.
+  - **`native_zenoh`** — ROS-free: the node speaks Autoware's DDS/CDR wire format directly over Zenoh; its only runtime library is Zenoh's `libzenohc`, with Fast-CDR and libyaml linked in statically. No ROS, no message packages.
+
+Because Operator I/O and Autoware transport meet only at a link-time seam (a generic control loop over an *intent source* and a *telemetry sink*, behind a transport-blind `AutowareGateway`), every I/O can pair with either transport.
+
+### The matrix
+
+The two I/O entry points each link against either Autoware transport — two executables × two transports = four buildable binaries, one per cell:
+
+| Operator I/O ↓ \ Autoware transport → | `rclcpp` (native ROS) | `native_zenoh` (ROS-free) |
+| :-- | :-- | :-- |
+| **`keyboard_control`** (keyboard intent + console telemetry) | ✅ **keyboard demo** — the primary getting-started path | ✅ local terminal, no ROS |
+| **`zenoh_control`** (zenoh JSON intent + telemetry) | ✅ **your UI over Zenoh, Autoware over ROS** | ✅ **cross-machine remote driving, fully ROS-free** |
+
+Each row is one entry-point executable: `keyboard_control` bundles the keyboard intent and the console telemetry (the two halves of the local terminal operator, never selected apart), and `zenoh_control` carries both over Zenoh. Each half is transport-agnostic, so either executable builds against either transport. The three paths in bold are the ones to know:
+
+- **`keyboard_control` × `rclcpp`** — the demo in [Quickstart](#quickstart). Build as a ROS node, drive from the terminal.
+- **`zenoh_control` × `rclcpp`** — drive from your own client over Zenoh while the node still integrates with Autoware over ROS. The everyday integration path: see [Operator I/O](#operator-io).
+- **`zenoh_control` × `native_zenoh`** — operator I/O over Zenoh *and* Autoware transport over Zenoh: no ROS anywhere on the operator side, suitable for cross-machine remote driving over the Internet. Covered in the [book](#going-further).
+
+This README covers the ROS-node side of the matrix (the `rclcpp` transport, with keyboard or Zenoh I/O). The `native_zenoh` transport, cross-machine remote driving, architecture, building and testing live in the **[book](#going-further)**.
+
+## Quickstart
+
+The fastest way to drive: the published release container brings up Autoware and the teleop node together, and you attach with one script. The first run pulls a multi-GB `autoware:universe`-based image and starts the planning simulator, so budget several minutes for the one-time setup; the interactive drive itself takes about two.
+
+### 1. Seed the map (once)
+
+The Autoware container needs a map volume. Populate it once:
+
 ```bash
 docker run --rm -v autoware_map:/map \
   ghcr.io/autowarefoundation/autoware-tools:scenario-simulator \
   cp -r /opt/autoware/share/kashiwanoha_map/map/. /map/
 ```
 
-### Method 1: Docker Compose (Recommended)
+### 2. Bring up Autoware + teleop
+
 ```bash
-# 1. Start Services (Autoware + Teleop Node)
 docker compose -f docker-compose-release.yaml up -d
-
-# 2. Attach & Control
-./run_teleop.sh
 ```
 
-### Method 2: Docker Standalone
-Since the release container idles by default (to prevent node conflicts), you must verify the run command:
+### 3. Attach and drive
 
-```bash
-# Basic Run
-docker run --rm -it --net=host \
-  "${TELEOP_IMAGE:-ghcr.io/evshary/autoware_manual_control:latest}" \
-  ros2 run autoware_manual_control keyboard_control
-
-# With Custom Config (run_teleop.sh wraps the neutral config into a
-# ros__parameters params-file before launching; this raw invocation bypasses
-# it, so it expects an already-wrapped /ManualControl: ros__parameters: file)
-docker run --rm -it --net=host \
-  -v $(pwd)/config/teleop.yaml:/autoware_manual_control_ws/config/teleop.yaml \
-  "${TELEOP_IMAGE:-ghcr.io/evshary/autoware_manual_control:latest}" \
-  ros2 run autoware_manual_control keyboard_control --ros-args --params-file config/teleop.yaml
-```
-
-`TELEOP_IMAGE` can be overridden to point at a fork's CI build (e.g.
-`TELEOP_IMAGE=ghcr.io/<your-fork>/autoware_manual_control:<tag>`).
-
-## 🛠️ Advanced & Dev Mode (Custom Transport & Isolation)
-
-`run_containers.sh` supports advanced transport and network topologies.
-
-### 1. Launch Stack
-```bash
-./run_containers.sh up [options]
-```
-Options:
-* `--transport <ros|zenoh>`: Choose transport mode, `ros` (default) or `zenoh`. In `zenoh` mode the stack also brings up a `zenoh_bridge` compose service (a published `eclipse/zenoh-bridge-ros2dds` image) that bridges Autoware's DDS to Zenoh on `tcp/7447`; no host binary is required.
-* `--isolated`: Place `teleop` container into an isolated bridge network (it reaches the bridge via `tcp/host.docker.internal:7447`).
-* `--no-autoware`: Exclude `autoware` from the local compose stack.
-
-### 2. Connect & Run
 ```bash
 ./run_teleop.sh
 ```
-`run_teleop.sh` automatically detects the stack environment, builds the appropriate backend (`rclcpp` or `native_zenoh`), and configures parameters.
 
-### 3. Tear Down
-```bash
-./run_containers.sh down
-```
-Cleans up all containers (including the `zenoh_bridge` service) and deletes temporary configurations.
+You are now at the keyboard controller. Press `R` to seed the initial pose, `Z` to engage (leave `STOP`), `M` to select a moving drive mode (the initial mode is `stop`, which holds max braking), `X` for Drive, then `WASD` to drive.
 
-## 🕹️ Operation Guide
+### Build from source as a ROS node
 
-### 1. Driving Checklist
-Follow this sequence to start driving:
-
-1.  **Configure** (optional): pick how this operator commands the vehicle with `operator_mode` (`local` or `remote`) and tune modes in `config/teleop.yaml` (see [Configuration](#️-configuration)).
-2.  **Set Initial Pose**: Press `R` to cycle through the preset locations and initialize the vehicle on the map.
-3.  **Engage**: Press `Z` to switch from `STOP` to your configured drive mode. Entering the drive mode **self-engages** (via the AD-API `enable_autoware_control`) — there is no separate engage step.
-4.  **Shift Gear**: Press `X` for Drive (D) or `C` for Reverse (R).
-5.  **Select Drive Mode**: Press `M` to cycle the active drive modes (the `modes:` list) — e.g. from `Physics` to `Cruise`.
-6.  **Drive**: Use `WASD` to control the vehicle.
-
-### 2. Controls
-| Key       | Function          | Description                                                          |
-| :-------- | :---------------- | :------------------------------------------------------------------- |
-| **Z**     | Toggle Drive      | Switches between `STOP` and the configured drive mode; self-engages on entry. |
-| **M**     | Switch Mode       | Cycles the active drive modes (the config `modes:` list).           |
-| **R**     | Reset Pose        | Cycles through the initial-pose presets (`init_pose.presets`).      |
-| **Space** | Emergency Stop    | Force stop with max braking. Press again to resume.                 |
-| **Q**     | Quit              | Exits the node.                                                     |
-
-#### Gear Selection
-*   **X**: Drive (D)
-*   **C**: Reverse (R)
-*   **V**: Park (P)
-
-#### Driving Controls
-| Key       | Physics Mode Action             | Cruise Mode Action                           |
-| :-------- | :------------------------------ | :------------------------------------------- |
-| **W**     | Throttle (Linear Accel)         | **Tap**: +1 km/h <br> **Hold**: Smooth Accel |
-| **S**     | Brake (Linear Decel)            | **Tap**: -1 km/h <br> **Hold**: Smooth Decel |
-| **A / D** | Steer Left/Right (Auto-centers) | Steer Left/Right (**Angle Lock**)            |
-
-The status line shows the live operation mode, gear, real/target speed and steer. A `Keys: [....]` line echoes your WASD input (UPPERCASE = held, lowercase = tapped, `.` = idle).
-
-### 3. Driving Modes
-Modes are config-selected plugins; the active set and cycle order come from the `modes:` list (which must include `stop`). The shipped modes are:
-
-*   **Physics Mode**: Simulates realistic inertia & friction. Steering has attack/decay limits and auto-centers on release.
-*   **Cruise Mode**: Optimized for testing. `W`/`S` snap the target speed by 1 km/h (tap) or ramp it (hold). Steering does not auto-center (Angle Lock).
-*   **Stop Mode**: The required initial and emergency-stop mode. Commands max braking.
-
-All per-mode tuning lives in the config (see below).
-
-## ⚙️ Configuration
-
-All configuration lives under [`config/`](config). Behavior is customized via `config/teleop.yaml`; a fully-commented template ships as [`config/teleop.example.yaml`](config/teleop.example.yaml). Copy it to your own local config (gitignored) before tuning:
-
-```bash
-cp config/teleop.example.yaml config/teleop.yaml
-```
-
-Key parameters:
-
-| Parameter | Meaning |
-| :-------- | :------ |
-| `operator_mode` | The AD-API operation mode this operator commands: `local` or `remote`. |
-| `modes` | The active drive modes, in `M`-cycle order. Must include `stop`; an empty list, a missing `stop`, or an unknown name aborts startup with an explanatory error. |
-| `control_rate_hz`, `shift_stop_tolerance`, `shift_brake_accel` | Shared control-loop settings (loop rate, and the stop-wait-shift gear-change behavior). |
-| `physics:` / `cruise:` / `stop:` | Per-mode tuning blocks (speeds, accel/brake limits, steering rates, ...). Each mode reads its own block. |
-| `init_pose.presets` | Named poses (`[x, y, z, yaw]`) cycled by the `R` key. |
-
-`config/teleop.yaml` is plain nested YAML (no ROS envelope):
-
-```yaml
-operator_mode: remote          # or "local"
-modes: ["stop", "physics", "cruise"]
-control_rate_hz: 60.0
-physics:
-  max_speed: 27.78
-  # ... see config/teleop.example.yaml for the full set
-```
-
-`run_teleop.sh` feeds this file to the native binary via `--config`, and wraps it into a `/ManualControl: ros__parameters:` params-file for the rclcpp node.
-
-## 🛠️ Development Setup
-
-For developers who want to modify source code or debug.
-
-### Prerequisites
-*   Docker & Docker Compose (Recommended) OR ROS 2 Humble
-
-### 1. Build and Run (Docker)
-We provide a simplified Docker setup that communicates with Autoware via the Host Network.
-
-```bash
-# 1. Start Dev Containers
-./run_containers.sh up --build -d
-
-# 2. Enter Control Node (Auto-builds & Runs)
-./run_teleop.sh
-```
-
-### 2. Build (Keyboard Control Mode)
-
-#### Compilation
+If you already have a ROS 2 Humble + Autoware workspace, the node drops in like any other package:
 
 ```bash
 mkdir -p autoware_manual_control_ws/src
 cd autoware_manual_control_ws/src
 git clone https://github.com/evshary/autoware_manual_control.git
 cd ..
-colcon build
-```
-
-#### Run the Node
-
-```bash
+colcon build --packages-select autoware_manual_control
+source install/setup.bash
 ros2 run autoware_manual_control keyboard_control
 ```
 
-### 3. Build with Zenoh (Remote Driving)
+`keyboard_control` is the keyboard-I/O / `rclcpp`-transport executable — the default build (`TELEOP_WITH_KEYBOARD=ON`, `TELEOP_AUTOWARE_TRANSPORT=rclcpp`), so no extra flags are needed.
 
-To enable the network transport (`zenoh_control`) for remote driving over Zenoh, you need the Zenoh C++ SDK and a JSON parser library.
+### Controls
 
-#### Prerequisites & Dependencies
+| Key | Action |
+| :-- | :-- |
+| `W` / `S` | Throttle / brake |
+| `A` / `D` | Steer left / right |
+| `X` / `C` / `V` | Shift to Drive / Reverse / Park (brakes to a stop, then shifts) |
+| `Z` | Toggle the AD-API operation mode between `STOP` and the configured `operator_mode` (`REMOTE` by default). A single press with no separate engage key: the node auto-enables Autoware control once the drive mode is active (self-engage). Does not change the active drive mode (that is `M`) |
+| `M` | Cycle the active drive mode, in the config `modes:` order (`stop` → `physics` → `cruise` → …) |
+| `R` | Cycle the initial-pose presets and seed `/initialpose` |
+| `Space` | Emergency stop: any drive mode → `stop` (max braking); press again resumes the previous drive mode |
+| `Q` | Quit |
 
-- **nlohmann_json**: A C++ JSON parser library. It can be installed via:
-  ```bash
-  sudo apt-get install nlohmann-json3-dev
-  ```
-- **Zenoh C/C++ SDK** (`zenohc` and `zenohcxx`):
-  - **Option A (Recommended, via apt)**: On Ubuntu, set up the official Eclipse Zenoh apt repository first, then install the pre-built libraries (see [zenoh-cpp-example](https://github.com/evshary/zenoh-cpp-example#option-1-install-packages-via-apt-ubuntu) or official documentation):
-    ```bash
-    # Add the Zenoh GPG Key
-    curl -L https://download.eclipse.org/zenoh/debian-repo/zenoh-public-key | sudo gpg --dearmor --yes --output /etc/apt/keyrings/zenoh-public-key.gpg
-    # Add the Repository to Sources
-    echo "deb [signed-by=/etc/apt/keyrings/zenoh-public-key.gpg] https://download.eclipse.org/zenoh/debian-repo/ /" | sudo tee /etc/apt/sources.list.d/zenoh.list > /dev/null
-    # Update and Install
-    sudo apt update
-    sudo apt install libzenohcpp-dev libzenohc-dev
-    ```
-    Install a Zenoh 1.x release matching the `rmw_zenoh` / remote peer you connect to, otherwise the endpoints won't discover each other.
-  - **Option B (Via rmw_zenoh workspace)**: If you build from a workspace that uses `rmw_zenoh`, the Zenoh vendor files are already bundled. You can export the path to this vendor prefix:
-    ```bash
-    export ZENOH_VENDOR_PREFIX="/path/to/rmw_zenoh_ws/install/zenoh_cpp_vendor/opt/zenoh_cpp_vendor"
-    export LD_LIBRARY_PATH="${ZENOH_VENDOR_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
-    ```
+The status line shows the live operation mode, gear, real and target speed, and steer. A `Keys: [....]` line echoes `WASD` (UPPERCASE = held, lowercase = tapped, `.` = idle).
 
-#### Compilation
+The shipped drive modes are **Physics** (realistic inertia and friction; steering auto-centers on release), **Cruise** (`W`/`S` snap the target speed by 1 km/h on tap or ramp it on hold; steering holds its angle), and **Stop** (the required initial and emergency mode; commands max braking). Modes are config-selected plugins.
 
-Build the package with the `TELEOP_WITH_ZENOH` CMake flag:
+## Development
+
+Where the [Quickstart](#quickstart) pulls the prebuilt release image, [`run_containers.sh`](run_containers.sh) builds and runs the whole stack from source — Autoware, the teleop node (built from this checkout via [`docker-compose.yaml`](docker-compose.yaml)), and, on the Zenoh transport, the DDS↔Zenoh bridge. It takes `--transport ros|zenoh`, `--isolated`, `--no-autoware` (bring your own Autoware), and `--operator` (a minimal ROS-free operator host that drives a remote vehicle over Zenoh — see the book's [Cross-Machine Remote Driving](book/src/cross-machine.md)), and pairs with [`run_teleop.sh`](run_teleop.sh), which attaches to the running stack and compiles the matching Autoware backend (`rclcpp` or `native_zenoh`). See the book's [Running Locally](book/src/running-locally.md) chapter for the commands and the compose details.
+
+## Operator I/O
+
+Both operator-I/O executables run over the same `rclcpp` Autoware transport — you pick I/O by which executable you build, independently of the transport.
+
+### keyboard + console (`keyboard_control`)
+
+The local terminal operator. `WASD` and the action keys above produce intent; the console renders telemetry. This is the default build and the Quickstart path.
 
 ```bash
-mkdir -p autoware_manual_control_ws/src
-cd autoware_manual_control_ws/src
-git clone https://github.com/evshary/autoware_manual_control.git
-cd ..
-# Build Zenoh transport only
-colcon build --cmake-args -DTELEOP_WITH_KEYBOARD=OFF -DTELEOP_WITH_ZENOH=ON
+ros2 run autoware_manual_control keyboard_control --ros-args --params-file <your-params>.yaml
 ```
 
-#### Run the Node
+### zenoh I/O (`zenoh_control`)
+
+The same control logic, but intent and telemetry travel over Zenoh as JSON instead of the terminal — so your own UI drives the vehicle while the node still talks to Autoware over ROS. Build the Zenoh-I/O executable:
 
 ```bash
-ros2 run autoware_manual_control zenoh_control --config config/teleop.yaml
-```
-
-#### Remote interface
-
-`zenoh_control` has no local keyboard — it is driven by a remote operator client over Zenoh. It subscribes operator intent on `manual_control/<scope>/intent` and publishes vehicle telemetry on `manual_control/<scope>/telemetry`; both payloads are JSON.
-
-### 4. Testing
-
-The unit tests are ROS-free: the `native_zenoh` codec's golden reference bytes are committed into the test sources, so the suites build and run with no Autoware/rmw runtime. They are registered for the `native_zenoh` transport and run via `colcon`:
-
-```bash
-# Build with the native_zenoh transport, then run the two gtests
 colcon build --packages-select autoware_manual_control \
-  --cmake-args -DTELEOP_AUTOWARE_TRANSPORT=native_zenoh -DTELEOP_WITH_ZENOH=ON
-colcon test --packages-select autoware_manual_control \
-  --ctest-args -R 'test_cdr|test_param_reader'
-colcon test-result --verbose
+  --cmake-args -DTELEOP_WITH_KEYBOARD=OFF -DTELEOP_WITH_ZENOH=ON
+ros2 run autoware_manual_control zenoh_control --ros-args --params-file <your-params>.yaml
 ```
 
-A bare `colcon test` (no `-R`) additionally runs the package's `ament_lint` suite. The `-R` filter above scopes the run to the two functional gtests.
+`zenoh_control` has no local keyboard. It subscribes operator intent on `manual_control/<scope>/intent` and publishes vehicle telemetry on `manual_control/<scope>/telemetry`, both JSON, where `<scope>` defaults to `v1` (the `scope` parameter). The input vocabulary is the same `WASD`/`RZXCVM` as the keyboard — a client just sends the decoded values.
 
-* **`test_cdr`** (31 tests) — the byte-perfect CDR gate. The native codec's output is asserted byte-for-byte equal to golden bytes captured from a real rmw, across the production control/telemetry messages, a full field-shape corpus (the vendored `test/test_msgs_idl` fixtures, exercising every field shape), and an independent Foxglove decoder oracle.
-* **`test_param_reader`** (10 tests) — the native parameter reader's contract: dotted keys, inline sequences, type fallback, empty-string and quoting/comment semantics.
-
-#### Golden-byte drift guard (requires ROS)
-
-`test/capture_golden.py` is a separate refresh/drift tool, **not** part of `colcon test`. It re-captures the golden bytes from a live rmw (`rclpy` under `rmw_cyclonedds_cpp`), so it must be run with ROS + Autoware sourced. Use `--check` in CI or after an Autoware message bump to diff the committed goldens against the live wire; with no flag it rewrites them.
-
-```bash
-RMW_IMPLEMENTATION=rmw_cyclonedds_cpp python3 test/capture_golden.py --check
-```
-
-Intent (client → node), one object per control tick:
+**Intent** (client → node), one JSON object per control tick:
 
 | Field | Type | Meaning |
 | :-- | :-- | :-- |
 | `throttle` / `brake` / `steer` | number | drive axes (the keyboard's `W` / `S` / `A`·`D`) |
 | `gear` | string | `PARK`, `DRIVE`, or `REVERSE` |
-| `mode_cycle` / `toggle_auto` / `reset_pose` | integer | monotonic counters — increment to trigger the `M` / `Z` / `R` actions (drop/duplicate-safe) |
-| `estop` | integer | non-zero = emergency stop |
+| `mode_cycle` / `toggle_auto` / `reset_pose` / `estop` | integer | monotonic counters — increment to trigger the `M` / `Z` / `R` / `Space` actions (drop- and duplicate-safe). `estop` toggles emergency braking once per increment, mirroring the keyboard `Space`; a client increments the value to fire, it does **not** hold a non-zero level. |
 
-Telemetry (node → client), published every control tick:
+**Telemetry** (node → client), published every control tick:
 
 | Field | Meaning |
 | :-- | :-- |
@@ -278,117 +141,97 @@ Telemetry (node → client), published every control tick:
 | `target_velocity` / `target_acceleration` / `target_steer` | the command being sent |
 | `shift_state` / `pending_gear` | gear-shift progress |
 | `info` | human-readable status / last error |
+| `watchdog_tripped` | bool — the deadman / arrival-timeout state; `true` when no fresh intent arrived within `arrival_timeout_ms` |
 | `timestamp` | publish time (ms) |
 
-## 🏗️ Architecture
+If no fresh intent arrives within `arrival_timeout_ms` (default 500 ms), the node deadman-brakes until input resumes — a stale or disconnected client cannot leave the vehicle driving.
 
-A small, component-based design. The control loop is generic over two ports — an **intent source** (produces operator `Intent`) and a **telemetry sink** (consumes vehicle `Telemetry`) — so a transport can be swapped without touching the control or mode logic.
+## Slotting into an Autoware launch
 
-### Directory Structure
+The node integrates with Autoware over the standard AD-API and vehicle interface. With the `rclcpp` transport it:
+
+- **publishes** control to `/external/selected/control_cmd` (transient-local QoS), gear to `/external/selected/gear_cmd`, the initial pose to `/initialpose`, and an operator heartbeat to `/external/local/heartbeat` or `/external/remote/heartbeat`;
+- **subscribes** vehicle state on `/vehicle/status/{velocity,steering,gear}_status`, operation mode on `/api/operation_mode/state`, and localization on `/api/localization/initialization_state`;
+- **calls** three AD-API operation-mode services: `/api/operation_mode/enable_autoware_control`, `/api/operation_mode/change_to_stop`, and `/api/operation_mode/change_to_local` *or* `change_to_remote` (whichever `operator_mode` selects — a single build calls one, not both).
+
+`/external/selected/control_cmd` is the input both the LOCAL and REMOTE operation-mode gates forward, so one publish path drives the vehicle in either mode. To add the node to your own launch, run the executable as a ROS node and hand it a params file.
+
+The node declares its parameters from overrides, so a launch file must hand it those parameters under a node-name envelope. The shipped [`config/teleop.yaml`](config) is **flat** — top-level parameter keys (`operator_mode`, `modes`, the per-mode `physics:` / `cruise:` / `stop:` blocks, …) with no `ros__parameters` wrapper — and is *not* read as-is by `ros2 launch`: launch_ros would treat those top-level keys as node names and `ManualControl` would silently run on defaults.
+
+You do not maintain an enveloped copy. [`run_teleop.sh`](run_teleop.sh) builds the envelope at runtime, wrapping the flat config under `/ManualControl: ros__parameters:` (the node's own name) before it launches the node. For your own `ros2 launch`, wrap the *same* flat config by hand — under `/ManualControl:`, or under the rename-proof `/**:` node-name glob shown below, which applies whatever the node is called:
+
+```yaml
+# the shipped flat config/teleop.yaml, wrapped under the ros__parameters
+# envelope for ros2 launch — same keys, no new format
+/**:
+  ros__parameters:
+    operator_mode: remote
+    modes: ["stop", "physics", "cruise"]
+    # ...the rest of config/teleop.yaml, indented under here
+```
+
+```python
+from launch import LaunchDescription
+from launch_ros.actions import Node
+
+def generate_launch_description():
+    return LaunchDescription([
+        Node(
+            package="autoware_manual_control",
+            executable="keyboard_control",  # or zenoh_control
+            output="screen",
+            # config/teleop.yaml wrapped under /**: ros__parameters: (above)
+            parameters=["/path/to/wrapped-teleop.yaml"],
+        ),
+    ])
+```
+
+`config/teleop.yaml` stays the single source of truth; the envelope is a mechanical wrap, not a second file to keep in sync. Alternatively, drive the node through `run_teleop.sh`, which performs the wrap for you.
+
+## Configuration
+
+Configuration lives under [`config/`](config). A fully-commented template ships as [`config/teleop.example.yaml`](config/teleop.example.yaml); copy it to a local (gitignored) `config/teleop.yaml` before tuning:
+
 ```bash
-src/
-├── common/      # Shared data: domain atoms (types.hpp) + the two port payloads (intent.hpp, telemetry.hpp)
-├── core/        # Control machinery: 60Hz loop (control_runtime), ModeManager, DriveMode interface + factory,
-│                #   the mode registry (register_modes), and the transport-blind parameter reader (parameter_reader)
-├── modes/       # Drive-mode strategies (stop, physics, cruise)
-├── ros/         # ROS boundary: ManualControlNode (pubs/subs/services, AD-API operation mode)
-├── io/
-│   ├── intent/      # Input adapters  — KeyboardIntent: keys -> Intent (sole stdin reader)
-│   └── telemetry/   # Output adapters — ConsoleTelemetry: Telemetry -> terminal (sole stdout writer)
-└── keyboard_control.cpp   # Composition root (main): wires the adapters + modes into the loop
+cp config/teleop.example.yaml config/teleop.yaml
 ```
 
-### Data Flow
+The file is plain nested YAML (no ROS parameter envelope). The most-used keys:
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant KeyboardIntent
-    participant ControlRuntime
-    participant ModeManager
-    participant ManualControlNode
-    participant ConsoleTelemetry
+| Key | Meaning |
+| :-- | :-- |
+| `operator_mode` | The AD-API operation mode this operator commands: `local` or `remote`. `STOP` is the implicit idle/safe operation mode; `Z` toggles between `STOP` and this mode — a single press with no separate engage key, after which the node auto-enables Autoware control once the drive mode is active (self-engage). |
+| `modes` | The active drive modes, in `M`-cycle order. Must include `stop`; an empty list, a missing `stop`, or an unknown name aborts startup with an explanatory error. |
+| `control_rate_hz`, `shift_stop_tolerance`, `shift_brake_accel` | Shared control-loop settings (loop rate; the stop-wait-shift gear-change behaviour). |
+| `physics:` / `cruise:` / `stop:` | Per-mode tuning blocks (speeds, accel/brake limits, steering rates, ...). Each mode reads its own block. |
+| `init_pose.presets` | Named poses (`[x, y, z, yaw]` in the map frame) cycled by the `R` key. |
 
-    loop 60Hz Control Loop
-        User->>KeyboardIntent: Key Press (WASD / M / Z / ...)
-        KeyboardIntent->>ControlRuntime: Intent (decoded, transport-agnostic)
-        ManualControlNode->>ControlRuntime: VehicleState (feedback)
-        ControlRuntime->>ModeManager: update(dt, Intent, VehicleState)
-        ModeManager->>ControlRuntime: ControlCommand
-        ControlRuntime->>ManualControlNode: publish_command()
-        ControlRuntime->>ConsoleTelemetry: publish(Telemetry)
-        ConsoleTelemetry->>User: Render status + key echo
-    end
+`run_teleop.sh` feeds this file to the node: for the `rclcpp` transport it wraps it into a `/ManualControl: ros__parameters:` params-file; the `native_zenoh` binary reads it directly via `--config`.
+
+The Zenoh-only keys (`scope`, `arrival_timeout_ms`, `zenoh_config`) and the full per-key reference are in the book's [Configuration](book/src/configuration.md) chapter.
+
+## Going further
+
+Everything beyond the ROS node lives in the **book** (`book/`):
+
+- **[Introduction](book/src/introduction.md)** — the two axes, the full matrix, and the link-time seam that makes them independent.
+- **[Autoware Transport](book/src/autoware-transport.md)** — `rclcpp` and the ROS-free `native_zenoh` transport in depth: the regenerated CDR codec and the wire contract.
+- **[Cross-Machine Remote Driving](book/src/cross-machine.md)** — driving a vehicle from another machine over Zenoh with no ROS on the operator side (the shipped ROS-free local terminal, or Zenoh operator I/O as a swap-in), over the Internet via a cloud Zenoh router (NAT traversal, TLS); the `--isolated` local proof.
+- **[Configuration](book/src/configuration.md)** — every parameter, grounded in the config files and the parameter reader.
+- **[Architecture](book/src/architecture.md)** — the `io/` `transport/` `core/` layout and the seam; how to add an I/O or a transport.
+- **[Building](book/src/building.md)** — the ROS build, the truly ROS-free `native_zenoh` build, and the IDL static vendoring.
+- **[Running Locally](book/src/running-locally.md)** — `run_containers.sh`: the whole stack built and run from source, the `--transport`/`--isolated` options, and the Zenoh bridge compose service.
+- **[Testing & CI](book/src/testing.md)** — the CDR golden gate, the golden-drift guard, and the no-ROS CI job.
+
+Render it locally with [mdBook](https://rust-lang.github.io/mdBook/):
+
+```bash
+mdbook serve book   # or: mdbook build book
 ```
 
-### Class Structure
-A **Strategy Pattern** + **Factory** manage driving modes, allowing runtime switching and easy extension. The 60Hz loop `run_control_runtime` is templated on the two ports.
+## Troubleshooting
 
-```mermaid
-classDiagram
-    class run_control_runtime {
-        <<function template>>
-        IntentSource, TelemetrySink
-    }
-    class KeyboardIntent {
-        +update() Intent
-        +w_state()/a_state()/s_state()/d_state() KeyHold
-    }
-    class ConsoleTelemetry {
-        +publish(Telemetry)
-        +set_extra_line(provider)
-    }
-    class ModeManager {
-        -DriveMode active_mode_
-        +update(dt, Intent, VehicleState)
-        +getCommand() ControlCommand
-    }
-    class DriveModeFactory {
-        +registerAvailable(name, creator)
-        +setActiveOrder(names)
-        +createMode(name) DriveMode
-    }
-    class DriveMode {
-        <<interface>>
-        +update(dt, Intent, VehicleState)* ControlCommand
-        +onEnter(state) / onExit()
-    }
-    class StopDriveMode
-    class PhysicsDriveMode
-    class CruiseDriveMode
-
-    run_control_runtime --> KeyboardIntent : IntentSource
-    run_control_runtime --> ConsoleTelemetry : TelemetrySink
-    run_control_runtime --> ModeManager : drives
-    ModeManager ..> DriveModeFactory : createMode(name)
-    ModeManager --> DriveMode : holds active
-    DriveMode <|.. StopDriveMode
-    DriveMode <|.. PhysicsDriveMode
-    DriveMode <|.. CruiseDriveMode
-```
-
-### How to add a new Drive Mode
-The smallest worked example is [`src/modes/stop_mode.hpp`](src/modes/stop_mode.hpp) (~40 lines) — read it first; it shows the whole contract. To add a mode:
-
-1.  **Implement** `src/modes/<name>_mode.hpp`: a class inheriting `DriveMode` (`src/core/drive_mode.hpp`) that provides
-    *   `static constexpr const char *kName = "<name>";`
-    *   a `struct Params { ... };` plus `static Params loadParams(const ParameterReader &reader)` that reads its tuning from config (use the reader's `read<T>(name, default)` accessors, e.g. `reader.read<float>("<name>.gain", p.gain)` — see `core/parameter_reader.hpp`),
-    *   a constructor taking `const Params &`, and the strategy method `ControlCommand update(float dt, const Intent &intent, const VehicleState &vehicle_state)` (optionally `onEnter` / `onExit` / `getStatusString`).
-2.  **Register** it: add one line `register_mode<YourDriveMode>(factory, reader);` to `register_all_modes` in `src/core/register_modes.hpp`.
-3.  **Enable** it: add its `kName` to the `modes:` list in `config/teleop.yaml` (and a tuning block if it has params).
-
-That is the whole change — one mode file, one register line, one config entry. No enum, no factory edits, no loop changes.
-
-### CI/CD Pipeline
-*   **Triggers**: Push to `main` or Tag `v*` -> Builds & Pushes to GHCR.
-*   **Image**: `ghcr.io/evshary/autoware_manual_control:latest`
-
-## ❓ Troubleshooting
-
-### Global Status Error (Missing Map)
-If you encounter a "Global Status Error" in RViz or TF errors related to the map frame (`map` frame does not exist), it is likely that the `autoware_map` volume is empty.
-
-👉 **Solution**: Run the map setup command in the **Quick Start** section.
+**Global status error / missing map.** A "Global Status Error" in RViz, or TF errors about a missing `map` frame, usually means the `autoware_map` volume is empty. Run the map-seed command from [Quickstart](#quickstart).
 
 ## Maintainers
 
