@@ -1,6 +1,7 @@
 
 # Operation mode this operator commands: "local" or "remote". STOP is the
-# implicit idle/safe state; entering the drive mode self-engages.
+# implicit idle/safe state; Z toggles into the drive mode, which self-engages
+# (enables Autoware control in the same press).
 operator_mode: remote
 
 # zenoh_control only

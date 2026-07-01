@@ -42,7 +42,7 @@ services:
       - ROS_DISTRO=humble
     volumes:
       - ./config/zenoh-bridge.json5:/config/zenoh-bridge.json5:ro
-    command: ["-n", "/v1", "-c", "/config/zenoh-bridge.json5"]
+    command: ["-n", "/v1", "-c", "/config/zenoh-bridge.json5", "-l", "tcp/0.0.0.0:7447"]
 
 volumes:
   autoware_map:

@@ -4,7 +4,17 @@
   // teleop's AutowareGateway can drive the vehicle over Zenoh. Launched under a
   // namespace (e.g. `-n /v1`) so every key below is prefixed with that scope.
   mode: "peer",
-  listen: { endpoints: ["tcp/0.0.0.0:7447"] },
+  // Inbound listen comes from the launch command (`-l tcp/0.0.0.0:7447`) so a
+  // connect-only bridge (dialing a router) can drop it and not contend for the
+  // port; a standalone bridge can hard-code an endpoint here instead.
+  listen: { endpoints: [] },
+  // NAT case: connect OUT to a reachable Zenoh router instead of relying on
+  // inbound `listen`. run_containers.sh injects ZENOH_CONNECT here (as `-e <ep>`,
+  // with no `-l`, so the bridge is connect-only); fill it in directly for a
+  // standalone bridge. Empty = listen-only (default).
+  connect: { endpoints: [] },
+  // TLS/auth (required over the Internet): use tls/… endpoints and a transport.link.tls
+  // block; see the book's Security section.
   plugins: {
     ros2dds: {
       // Allowlist is exactly the topics/services the teleop touches; nothing else

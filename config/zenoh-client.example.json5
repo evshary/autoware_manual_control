@@ -1,7 +1,10 @@
 {
+  // Reference shape of the operator's Zenoh client. run_teleop.sh generates an
+  // equivalent from ZENOH_MODE / ZENOH_CONNECT / ZENOH_LISTEN -- edit those, not this.
+  // peer = direct to a vehicle bridge; client = via a middle router.
   mode: "peer",
-  connect: {
-    endpoints: ["tcp/host.docker.internal:7447"]
-  },
-  scouting: { multicast: { enabled: false }, gossip: { enabled: false } }
+  connect: { endpoints: ["tcp/host.docker.internal:7447"] },
+  scouting: { multicast: { enabled: false }, gossip: { enabled: false } },
+  // TLS/auth (required over the Internet): use a tls/… endpoint and a transport.link.tls
+  // block; see the book's Security section.
 }

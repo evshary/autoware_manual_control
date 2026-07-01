@@ -1,150 +1,150 @@
 #!/bin/bash
+set -euo pipefail
 
-# Export HOSTNAME so compose can expand ${HOSTNAME} in extra_hosts.
+# compose expands ${HOSTNAME} in extra_hosts.
 export HOSTNAME="${HOSTNAME:-$(hostname)}"
 
-# Color definitions
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m' # No Color
+GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 
 show_help() {
-    echo "Usage: $0 [up|down|ps|logs|config|dry-run] [options]"
-    echo ""
-    echo "Commands:"
-    echo "  up             Start the container stack"
-    echo "  down           Stop and clean up the container stack"
-    echo "  ps             List container status"
-    echo "  logs           Show container logs"
-    echo "  config         Validate and view compose config"
-    echo "  dry-run        Dry run validation"
-    echo ""
-    echo "Options for 'up':"
-    echo "  --transport <ros|zenoh>   Specify transport mode: 'ros' (default) or 'zenoh'"
-    echo "  --isolated                Run teleop in an isolated bridge network (default: host network)"
-    echo "  --no-autoware             Exclude autoware service from this stack (run it separately)"
-    echo "  -h, --help                Show this help message"
+    cat <<EOF
+Usage: $(basename "$0") [up|down|ps|logs|config|dry-run] [options]
+
+Commands:
+  up        Start the container stack
+  down      Stop and remove the stack
+  ps        List container status
+  logs      Show container logs
+  config    Validate and view the merged compose config
+  dry-run   Render the merged compose config without starting anything
+
+Options for 'up':
+  --transport <ros|zenoh>  Autoware transport: 'ros' (default) or 'zenoh'
+  --isolated               Put the teleop on its own bridge network (default: host)
+  --no-autoware            Exclude Autoware (run it separately)
+  --operator               Operator host: run only the minimal ROS-free teleop that
+                           reaches a remote vehicle over Zenoh. Implies --transport zenoh.
+  -h, --help               Show this help
+
+Environment (either side can be the server or the dialer):
+  ZENOH_CONNECT  Dial OUT to this endpoint (tcp/host:7447) -- the far side's listen
+                 address, or a cloud router. Unset on the vehicle = the bridge listens.
+  ZENOH_LISTEN   Be a fixed-IP server on this endpoint (tcp/0.0.0.0:7447) the far side
+                 dials into. The vehicle bridge listens by default; set this on
+                 --operator to make the operator the server the vehicle dials.
+  ZENOH_MODE     Dial mode: 'peer' (default, direct to the far end) or 'client' (the
+                 far end is a router -- a router relays only between clients).
+EOF
 }
 
-# Parse options
 CMD=""
 TRANSPORT="ros"
 ISOLATED="false"
 NO_AUTOWARE="false"
+OPERATOR="false"
+ZENOH_CONNECT="${ZENOH_CONNECT:-}"
+ZENOH_LISTEN="${ZENOH_LISTEN:-}"
+ZENOH_MODE="${ZENOH_MODE:-}"
 ARGS=()
-
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        -h|--help)
-            show_help
-            exit 0
-            ;;
-        up|down|ps|logs|config|dry-run)
-            CMD="$1"
-            shift
-            ;;
-        --transport)
-            TRANSPORT="$2"
-            shift 2
-            ;;
-        --isolated)
-            ISOLATED="true"
-            shift
-            ;;
-        --no-autoware)
-            NO_AUTOWARE="true"
-            shift
-            ;;
-        *)
-            ARGS+=("$1")
-            shift
-            ;;
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -h|--help) show_help; exit 0 ;;
+        up|down|ps|logs|config|dry-run) CMD="$1"; shift ;;
+        --transport) TRANSPORT="$2"; shift 2 ;;
+        --isolated) ISOLATED="true"; shift ;;
+        --no-autoware) NO_AUTOWARE="true"; shift ;;
+        --operator) OPERATOR="true"; shift ;;
+        *) ARGS+=("$1"); shift ;;
     esac
 done
-
-if [ -z "$CMD" ]; then
-    CMD="up"
-fi
-
-# Ensure tmp directory exists
+[ -n "$CMD" ] || CMD="up"
 mkdir -p tmp
 
-COMPOSE_FILES=("-f" "docker-compose.yaml")
+# The vehicle bridge command, built from its role: -l to be a fixed-IP server
+# (ZENOH_LISTEN), -e to dial out (ZENOH_CONNECT), and the ZENOH_MODE positional when
+# dialing (see --help for why a router needs 'client').
+bridge_command() {
+    local cmd='"-n", "/v1", "-c", "/config/zenoh-bridge.json5"'
+    if [ -n "$ZENOH_LISTEN" ]; then cmd="$cmd, \"-l\", \"$ZENOH_LISTEN\""; fi
+    if [ -n "$ZENOH_CONNECT" ]; then cmd="$cmd, \"-e\", \"$ZENOH_CONNECT\""; fi
+    if [ -n "$ZENOH_CONNECT" ] && [ -n "$ZENOH_MODE" ]; then cmd="$cmd, \"$ZENOH_MODE\""; fi
+    printf '[%s]' "$cmd"
+}
 
-# The zenoh transport pulls in the zenoh_bridge service (compose profile).
-# `down` always activates it so the bridge is torn down regardless of the
-# transport `up` was given.
-if [ "$TRANSPORT" = "zenoh" ] || [ "$CMD" = "down" ]; then
-    COMPOSE_FILES+=("--profile" "zenoh")
-fi
+is_render_cmd() { case "$CMD" in up|config|dry-run) return 0 ;; *) return 1 ;; esac; }
 
-# If isolated, prepare override file
-OVERRIDE_FILE="tmp/docker-compose-override.yaml"
-if [ "$ISOLATED" = "true" ] || [ -f "$OVERRIDE_FILE" ]; then
-    # Generate the override when isolation is requested for any command that
-    # renders/starts the stack (so config/dry-run reflect the bridge network the
-    # same way up does), or keep an existing one for ps/logs.
-    if [ "$ISOLATED" = "true" ] && { [ "$CMD" = "up" ] || [ "$CMD" = "config" ] || [ "$CMD" = "dry-run" ]; }; then
-        echo -e "${YELLOW}[TELEOP]${NC} Generating isolated bridge override file..."
-        cat << 'EOF' > "$OVERRIDE_FILE"
-version: '3.8'
-services:
-  teleop:
-    network_mode: bridge
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-EOF
+# Resolve the role into its compose project, files, override, and services. Each
+# role has its own project name (from the compose `name:`) so an operator and a
+# vehicle can coexist on one host without clobbering each other's state.
+COMPOSE=(); SERVICES=()
+if [ "$OPERATOR" = "true" ]; then
+    TRANSPORT="zenoh"
+    PROJECT="autoware_manual_control_operator"
+    OVERRIDE="tmp/${PROJECT}.override.yaml"
+    COMPOSE=("-f" "docker-compose-operator.yaml")
+    if is_render_cmd; then
+        rm -f "$OVERRIDE"
+        if [ -n "$ZENOH_LISTEN" ]; then
+            # Publish the listen port so a remote vehicle can dial this operator.
+            port="${ZENOH_LISTEN##*:}"
+            printf 'services:\n  teleop:\n    ports: ["%s:%s"]\n' "$port" "$port" > "$OVERRIDE"
+        fi
     fi
-    
-    if [ -f "$OVERRIDE_FILE" ]; then
-        COMPOSE_FILES+=("-f" "$OVERRIDE_FILE")
+    if [ -f "$OVERRIDE" ]; then COMPOSE+=("-f" "$OVERRIDE"); fi
+    SERVICES=("teleop")
+else
+    PROJECT="autoware_manual_control_ws"
+    OVERRIDE="tmp/${PROJECT}.override.yaml"
+    COMPOSE=("-f" "docker-compose.yaml")
+    # `down` activates the zenoh profile too, so the bridge is removed whatever the
+    # transport `up` was given.
+    if [ "$TRANSPORT" = "zenoh" ] || [ "$CMD" = "down" ]; then COMPOSE+=("--profile" "zenoh"); fi
+    if is_render_cmd; then
+        bridge_role="false"
+        if [ "$TRANSPORT" = "zenoh" ] && { [ -n "$ZENOH_CONNECT" ] || [ -n "$ZENOH_LISTEN" ]; }; then
+            bridge_role="true"
+        fi
+        if [ "$ISOLATED" = "true" ] || [ "$bridge_role" = "true" ]; then
+            {
+                echo "services:"
+                if [ "$ISOLATED" = "true" ]; then
+                    printf '  teleop:\n    network_mode: bridge\n    extra_hosts:\n      - "host.docker.internal:host-gateway"\n'
+                fi
+                if [ "$bridge_role" = "true" ]; then
+                    printf '  zenoh_bridge:\n    command: %s\n' "$(bridge_command)"
+                fi
+            } > "$OVERRIDE"
+        else
+            rm -f "$OVERRIDE"
+        fi
     fi
+    if [ -f "$OVERRIDE" ]; then COMPOSE+=("-f" "$OVERRIDE"); fi
+    SERVICES=("visualizer" "teleop")
+    if [ "$TRANSPORT" = "zenoh" ]; then SERVICES+=("zenoh_bridge"); fi
+    if [ "$NO_AUTOWARE" = "false" ]; then SERVICES=("autoware" "${SERVICES[@]}"); fi
 fi
 
-# Define services to manage
-SERVICES="visualizer teleop"
-if [ "$TRANSPORT" = "zenoh" ]; then
-    SERVICES="$SERVICES zenoh_bridge"
-fi
-if [ "$NO_AUTOWARE" = "false" ]; then
-    SERVICES="autoware $SERVICES"
-fi
+STATE="tmp/state.${PROJECT}.env"
 
-# Handle execution
 case "$CMD" in
-    "up")
-        echo -e "${YELLOW}[TELEOP]${NC} Starting services in ${GREEN}${TRANSPORT}${NC} mode (Isolated: ${GREEN}${ISOLATED}${NC}, Separate Autoware: ${GREEN}${NO_AUTOWARE}${NC})..."
-        
-        # Save state for run_teleop.sh
-        echo -e "TRANSPORT=\"$TRANSPORT\"\nISOLATED=\"$ISOLATED\"" > tmp/test_state.env
-        
-        # Start containers (zenoh_bridge is part of the stack via the zenoh profile)
-        docker compose "${COMPOSE_FILES[@]}" up -d "${ARGS[@]}" $SERVICES
+    up)
+        echo -e "${YELLOW}[TELEOP]${NC} Starting ${GREEN}${PROJECT}${NC} (transport=${TRANSPORT}, isolated=${ISOLATED}, no-autoware=${NO_AUTOWARE})..."
+        # State for run_teleop.sh, keyed by project so roles never overwrite each other.
+        printf 'TRANSPORT="%s"\nISOLATED="%s"\nZENOH_CONNECT="%s"\nZENOH_LISTEN="%s"\nZENOH_MODE="%s"\n' \
+            "$TRANSPORT" "$ISOLATED" "$ZENOH_CONNECT" "$ZENOH_LISTEN" "$ZENOH_MODE" > "$STATE"
+        docker compose "${COMPOSE[@]}" up -d ${ARGS[@]+"${ARGS[@]}"} "${SERVICES[@]}"
         ;;
-        
-    "down")
-        echo -e "${RED}[TELEOP]${NC} Stopping and removing services..."
-        
-        # Stop containers (the zenoh profile is active for down, so the
-        # zenoh_bridge service is removed too).
-        docker compose "${COMPOSE_FILES[@]}" down "${ARGS[@]}"
-
-        # Clean up temporary configurations
-        rm -f "$OVERRIDE_FILE"
-        rm -f tmp/test_state.env
-        echo -e "${GREEN}[TELEOP]${NC} Stack cleaned up successfully."
+    down)
+        echo -e "${RED}[TELEOP]${NC} Stopping ${PROJECT}..."
+        docker compose "${COMPOSE[@]}" down ${ARGS[@]+"${ARGS[@]}"}
+        rm -f "$OVERRIDE" "$STATE"
+        echo -e "${GREEN}[TELEOP]${NC} Cleaned up."
         ;;
-        
-    "dry-run")
-        # Render and validate the merged compose config without starting anything.
-        echo -e "${YELLOW}[TELEOP]${NC} Dry run (Transport: ${GREEN}${TRANSPORT}${NC}, Isolated: ${GREEN}${ISOLATED}${NC}, Separate Autoware: ${GREEN}${NO_AUTOWARE}${NC})"
-        docker compose "${COMPOSE_FILES[@]}" config "${ARGS[@]}" $SERVICES
+    dry-run)
+        echo -e "${YELLOW}[TELEOP]${NC} Dry run (${PROJECT}, transport=${TRANSPORT}, isolated=${ISOLATED})"
+        docker compose "${COMPOSE[@]}" config ${ARGS[@]+"${ARGS[@]}"} "${SERVICES[@]}"
         ;;
-
     *)
-        # Passthrough config, ps, logs, etc.
-        docker compose "${COMPOSE_FILES[@]}" "$CMD" "${ARGS[@]}"
+        docker compose "${COMPOSE[@]}" "$CMD" ${ARGS[@]+"${ARGS[@]}"}
         ;;
 esac
-
