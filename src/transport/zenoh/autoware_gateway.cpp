@@ -103,6 +103,10 @@ struct AutowareGateway::Impl
   std::atomic<uint8_t> current_gear{msgs::GearReport::PARK};
   std::atomic<uint8_t> current_op_mode{msgs::OperationModeState::UNKNOWN};
   std::atomic<bool> avail_drive{false};
+  // Over a Zenoh bridge a late subscriber may never see the latched
+  // operation_mode/state, leaving avail_drive at its default; this records
+  // whether that state was ever seen, to tell "unknown" from "known unavailable".
+  std::atomic<bool> op_mode_seen{false};
   std::atomic<bool> control_enabled{false};
   std::atomic<bool> loc_initialized{false};
 
@@ -251,6 +255,7 @@ AutowareGateway::AutowareGateway()
             m.is_local_mode_available :
             m.is_remote_mode_available);
           impl_->control_enabled.store(m.is_autoware_control_enabled);
+          impl_->op_mode_seen.store(true);
 
           if (m.mode == impl_->operator_mode && !m.is_in_transition &&
           !m.is_autoware_control_enabled)
@@ -411,7 +416,9 @@ void AutowareGateway::toggle_operation_mode()
     (target_mode == msgs::OperationModeState::STOP) ? "STOP" : (op_mode ==
     msgs::OperationModeState::LOCAL ? "LOCAL" : "REMOTE");
 
-  if (target_mode != msgs::OperationModeState::STOP && !impl_->avail_drive.load()) {
+  if (target_mode != msgs::OperationModeState::STOP && impl_->op_mode_seen.load() &&
+    !impl_->avail_drive.load())
+  {
     std::lock_guard<std::mutex> lock(impl_->info_mutex);
     impl_->info_message = name + " mode unavailable";
     return;
