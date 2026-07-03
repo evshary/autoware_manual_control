@@ -82,8 +82,7 @@ if [ "$ROLE" = "dev" ]; then
             sed 's|zenoh_config: \"\"|zenoh_config: \"/tmp/zenoh_client.json5\"|g' \"\$cfg\" > /tmp/teleop_config.yaml &&
             exec install/autoware_manual_control/lib/autoware_manual_control/keyboard_control --config /tmp/teleop_config.yaml
         else
-            { printf '/ManualControl:\n  ros__parameters:\n'; sed 's/^/    /' \"\$cfg\"; } > /tmp/teleop_config.yaml &&
-            exec ros2 run autoware_manual_control keyboard_control --ros-args --params-file /tmp/teleop_config.yaml
+            exec ros2 run autoware_manual_control keyboard_control --ros-args --params-file \"\$cfg\"
         fi"
     exit $?
 fi
@@ -94,6 +93,5 @@ docker compose "${COMPOSE[@]}" exec -it teleop bash -c '
     source install/setup.bash &&
     cfg="$(ros2 pkg prefix --share autoware_manual_control)/config/teleop.example.yaml" &&
     if [ -f config/teleop.yaml ]; then cfg=config/teleop.yaml; fi &&
-    { printf "/ManualControl:\n  ros__parameters:\n"; sed "s/^/    /" "$cfg"; } > /tmp/teleop_config.yaml &&
     echo -e "\n\033[1;32mStarting Keyboard Control...\033[0m" &&
-    exec ros2 run autoware_manual_control keyboard_control --ros-args --params-file /tmp/teleop_config.yaml'
+    exec ros2 run autoware_manual_control keyboard_control --ros-args --params-file "$cfg"'

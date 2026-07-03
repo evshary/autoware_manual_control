@@ -6,7 +6,7 @@ All configuration lives under `config/`. The behaviour is driven by one file —
 cp config/teleop.example.yaml config/teleop.yaml
 ```
 
-The file is **plain nested YAML** with no ROS parameter envelope. The same file feeds both transports; only the reading path differs (see [How parameters are read](#how-parameters-are-read)). Every key is optional and falls back to the default shown below.
+The file is a **standard ROS 2 params file** (`/ManualControl: ros__parameters:`), and the same file feeds both transports unchanged; only the reading path differs (see [How parameters are read](#how-parameters-are-read)). Every key is optional and falls back to the default shown below.
 
 ## Shared keys
 
@@ -75,7 +75,7 @@ These are read only by the Zenoh paths — the `zenoh_control` entry point (oper
 
 The same YAML is consumed two different ways, behind the one transport-blind `ParameterReader` interface (`src/core/parameter_reader.hpp`):
 
-- **`rclcpp`** — parameters arrive as ROS parameters. `run_teleop.sh` wraps `teleop.yaml` into a `/ManualControl: ros__parameters:` params-file and passes it with `--ros-args --params-file`. The `ManualControl` node declares parameters from the overrides; the reader coerces a YAML integer to the requested float/double rather than throwing (`src/transport/rclcpp/parameter_reader.cpp`).
-- **`native_zenoh`** — the binary reads the file directly from `--config <path>`. `src/transport/zenoh/parameter_reader.cpp` parses it with libyaml (statically linked) and flattens the DOM to dotted names: a mapping recurses with its key appended (`physics: { max_speed: x }` → `physics.max_speed`), a sequence becomes a vector, a scalar becomes a one-element vector. libyaml resolves quotes, comments, flow style and UTF-8, so inline sequences (`["stop", "physics"]`), quoted values with trailing comments, and empty-string-as-default all behave as you would expect. A non-numeric value where a number is expected logs a warning and falls back to the default.
+- **`rclcpp`** — the file is passed as-is with `--ros-args --params-file`; parameters arrive as ROS parameters. The `ManualControl` node declares parameters from the overrides; the reader coerces a YAML integer to the requested float/double rather than throwing (`src/transport/rclcpp/parameter_reader.cpp`).
+- **`native_zenoh`** — the binary reads the same file from `--config <path>`. `src/transport/zenoh/parameter_reader.cpp` parses it with libyaml (statically linked), unwraps the `<node>: {ros__parameters: {...}}` envelope (plain nested YAML without one also works), and flattens the DOM to dotted names: a mapping recurses with its key appended (`physics: { max_speed: x }` → `physics.max_speed`), a sequence becomes a vector, a scalar becomes a one-element vector. libyaml resolves quotes, comments, flow style and UTF-8, so inline sequences (`["stop", "physics"]`), quoted values with trailing comments, and empty-string-as-default all behave as you would expect. A non-numeric value where a number is expected logs a warning and falls back to the default.
 
 Both readers expose the same generic `read<T>(name, default)` for `float`, `double`, `std::string`, `std::vector<std::string>`, and `std::vector<double>`; each transport provides the one explicit instantiation, so neither the core nor the modes ever see `rclcpp` or Zenoh.

@@ -69,6 +69,31 @@ void walk(
   }
 }
 
+// A ROS 2 params file wraps everything in `<node>: {ros__parameters: {...}}`;
+// walking from the inner mapping lets the same file feed both rclcpp's
+// --params-file and --config, so a dual-transport deployment keeps one config.
+// Anything else walks from the root unchanged.
+yaml_node_t * unwrap_ros_params(yaml_document_t * doc, yaml_node_t * root)
+{
+  if (!root || root->type != YAML_MAPPING_NODE ||
+    root->data.mapping.pairs.top - root->data.mapping.pairs.start != 1)
+  {
+    return root;
+  }
+  yaml_node_t * node = yaml_document_get_node(doc, root->data.mapping.pairs.start->value);
+  if (!node || node->type != YAML_MAPPING_NODE) {return root;}
+  for (auto * p = node->data.mapping.pairs.start; p < node->data.mapping.pairs.top; ++p) {
+    yaml_node_t * k = yaml_document_get_node(doc, p->key);
+    yaml_node_t * v = yaml_document_get_node(doc, p->value);
+    if (k && k->type == YAML_SCALAR_NODE && scalar_of(k) == "ros__parameters" &&
+      v && v->type == YAML_MAPPING_NODE)
+    {
+      return v;
+    }
+  }
+  return root;
+}
+
 std::map<std::string, std::vector<std::string>> parse_config_file(const std::string & path)
 {
   std::map<std::string, std::vector<std::string>> out;
@@ -90,7 +115,8 @@ std::map<std::string, std::vector<std::string>> parse_config_file(const std::str
   YamlDoc d;
   d.ok = yaml_parser_load(&parser, &d.doc);
   if (d.ok) {
-    walk(&d.doc, yaml_document_get_root_node(&d.doc), "", out);
+    yaml_node_t * root = yaml_document_get_root_node(&d.doc);
+    walk(&d.doc, unwrap_ros_params(&d.doc, root), "", out);
   } else {
     std::fprintf(
       stderr, "[ParameterReader] yaml parse error in %s: %s\n",

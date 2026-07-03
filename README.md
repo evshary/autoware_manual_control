@@ -156,19 +156,7 @@ The node integrates with Autoware over the standard AD-API and vehicle interface
 
 `/external/selected/control_cmd` is the input both the LOCAL and REMOTE operation-mode gates forward, so one publish path drives the vehicle in either mode. To add the node to your own launch, run the executable as a ROS node and hand it a params file.
 
-The node declares its parameters from overrides, so a launch file must hand it those parameters under a node-name envelope. The shipped [`config/teleop.yaml`](config) is **flat** — top-level parameter keys (`operator_mode`, `modes`, the per-mode `physics:` / `cruise:` / `stop:` blocks, …) with no `ros__parameters` wrapper — and is *not* read as-is by `ros2 launch`: launch_ros would treat those top-level keys as node names and `ManualControl` would silently run on defaults.
-
-You do not maintain an enveloped copy. [`run_teleop.sh`](run_teleop.sh) builds the envelope at runtime, wrapping the flat config under `/ManualControl: ros__parameters:` (the node's own name) before it launches the node. For your own `ros2 launch`, wrap the *same* flat config by hand — under `/ManualControl:`, or under the rename-proof `/**:` node-name glob shown below, which applies whatever the node is called:
-
-```yaml
-# the shipped flat config/teleop.yaml, wrapped under the ros__parameters
-# envelope for ros2 launch — same keys, no new format
-/**:
-  ros__parameters:
-    operator_mode: remote
-    modes: ["stop", "physics", "cruise"]
-    # ...the rest of config/teleop.yaml, indented under here
-```
+The shipped [`config/teleop.yaml`](config) is a standard ROS 2 params file (`/ManualControl: ros__parameters:`), so `ros2 launch` and `--ros-args --params-file` consume it as-is — and the `native_zenoh` binary reads the *same* file via `--config`, unwrapping the envelope itself. One file, no transformation on any path:
 
 ```python
 from launch import LaunchDescription
@@ -180,13 +168,10 @@ def generate_launch_description():
             package="autoware_manual_control",
             executable="keyboard_control",  # or zenoh_control
             output="screen",
-            # config/teleop.yaml wrapped under /**: ros__parameters: (above)
-            parameters=["/path/to/wrapped-teleop.yaml"],
+            parameters=["/path/to/teleop.yaml"],
         ),
     ])
 ```
-
-`config/teleop.yaml` stays the single source of truth; the envelope is a mechanical wrap, not a second file to keep in sync. Alternatively, drive the node through `run_teleop.sh`, which performs the wrap for you.
 
 ## Configuration
 
@@ -196,7 +181,7 @@ Configuration lives under [`config/`](config). A fully-commented template ships 
 cp config/teleop.example.yaml config/teleop.yaml
 ```
 
-The file is plain nested YAML (no ROS parameter envelope). The most-used keys:
+The file is a standard ROS 2 params file; both transports read it as-is. The most-used keys (all under `ros__parameters:`):
 
 | Key | Meaning |
 | :-- | :-- |
@@ -206,7 +191,7 @@ The file is plain nested YAML (no ROS parameter envelope). The most-used keys:
 | `physics:` / `cruise:` / `stop:` | Per-mode tuning blocks (speeds, accel/brake limits, steering rates, ...). Each mode reads its own block. |
 | `init_pose.presets` | Named poses (`[x, y, z, yaw]` in the map frame) cycled by the `R` key. |
 
-`run_teleop.sh` feeds this file to the node: for the `rclcpp` transport it wraps it into a `/ManualControl: ros__parameters:` params-file; the `native_zenoh` binary reads it directly via `--config`.
+`run_teleop.sh` feeds this file to the node unchanged: `--ros-args --params-file` for the `rclcpp` transport, `--config` for the `native_zenoh` binary.
 
 The Zenoh-only keys (`scope`, `arrival_timeout_ms`, `zenoh_config`) and the full per-key reference are in the book's [Configuration](book/src/configuration.md) chapter.
 

@@ -1,7 +1,8 @@
 // Contract gate for the native (zenoh) ParameterReader: the libyaml DOM flattening
 // and the read<T> contract the teleop owns -- dotted keys, type fallback, empty and
-// present-but-empty semantics. The config is plain nested YAML (no ros__parameters
-// envelope); the binary takes it via --config.
+// present-but-empty semantics. The binary takes plain nested YAML via --config; a
+// ROS 2 params file (`<node>: {ros__parameters: {...}}`) is unwrapped to the same
+// keys, so one file can feed both --config and rclcpp's --params-file.
 
 #include "core/parameter_reader.hpp"
 #include "transport/zenoh/cli_params.hpp"
@@ -172,4 +173,22 @@ TEST(ParamReader, PresentEmptySequence) {
 
   auto pose = reader_for("start: []\n");
   EXPECT_EQ(pose->read<std::vector<double>>("start", {1.0, 2.0}).size(), 2u);
+}
+
+// 12. A ROS 2 params file (`<node>: {ros__parameters: {...}}`) unwraps to the same
+//     keys as the flat form; a single-key document without the envelope does not.
+TEST(ParamReader, RosParamsFileUnwraps) {
+  auto r = reader_for(
+    "/ManualControl:\n"
+    "  ros__parameters:\n"
+    "    scope: v1\n"
+    "    physics:\n"
+    "      max_speed: 27.78\n"
+    "    modes: [\"stop\", \"physics\"]\n");
+  EXPECT_EQ(r->read<std::string>("scope", std::string{"DEF"}), "v1");
+  EXPECT_FLOAT_EQ(r->read<float>("physics.max_speed", -1.0f), 27.78f);
+  EXPECT_EQ(r->read<std::vector<std::string>>("modes", {}).size(), 2u);
+
+  auto flat = reader_for("physics:\n  max_speed: 10.0\n");
+  EXPECT_FLOAT_EQ(flat->read<float>("physics.max_speed", -1.0f), 10.0f);
 }
