@@ -52,6 +52,9 @@ void run_control_runtime(
 
   ShiftState shift_state = ShiftState::IDLE;
   Gear pending_gear = Gear::PARK;
+  // Last requested gear, as a level: an edge judged against a gear report
+  // still catching up on a prior shift is swallowed and never re-fires.
+  Gear desired_gear = Gear::NONE;
 
   const auto loop_duration = std::chrono::microseconds(static_cast<int>(1000000.0 / cfg.rate_hz));
 
@@ -81,24 +84,30 @@ void run_control_runtime(
 
     VehicleState vehicle_state = gateway->get_vehicle_state();
 
-    // Shift request: brake to a stop, shift, then resume (stop-wait-shift).
-    if (intent.shift_drive && vehicle_state.gear != Gear::DRIVE) {
-      pending_gear = Gear::DRIVE;
-      shift_state = ShiftState::STOPPING;
+    if (intent.shift_drive) {
+      desired_gear = Gear::DRIVE;
     }
-    if (intent.shift_reverse && vehicle_state.gear != Gear::REVERSE) {
-      pending_gear = Gear::REVERSE;
-      shift_state = ShiftState::STOPPING;
+    if (intent.shift_reverse) {
+      desired_gear = Gear::REVERSE;
     }
-    if (intent.shift_park && vehicle_state.gear != Gear::PARK) {
-      pending_gear = Gear::PARK;
-      shift_state = ShiftState::STOPPING;
+    if (intent.shift_park) {
+      desired_gear = Gear::PARK;
+    }
+
+    // Brake to a stop, shift, then resume (stop-wait-shift).
+    if (shift_state == ShiftState::IDLE && desired_gear != Gear::NONE) {
+      if (vehicle_state.gear == desired_gear) {
+        desired_gear = Gear::NONE;
+      } else {
+        shift_state = ShiftState::STOPPING;
+      }
     }
 
     bool override_control = false;
     ControlCommand override_cmd;
 
     if (shift_state == ShiftState::STOPPING) {
+      pending_gear = desired_gear;
       override_control = true;
       override_cmd.velocity = 0.0f;
       override_cmd.acceleration = cfg.shift_brake_accel;
