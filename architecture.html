@@ -1,0 +1,300 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Architecture - Autoware Manual Control</title>
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="A modular manual-driving node for Autoware, organised around two independent axes: operator I/O and Autoware transport.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "rust";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="introduction.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="autoware-transport.html"><strong aria-hidden="true">2.</strong> Autoware Transport</a></li><li class="chapter-item expanded "><a href="cross-machine.html"><strong aria-hidden="true">3.</strong> Cross-Machine Remote Driving</a></li><li class="chapter-item expanded "><a href="configuration.html"><strong aria-hidden="true">4.</strong> Configuration</a></li><li class="chapter-item expanded "><a href="architecture.html" class="active"><strong aria-hidden="true">5.</strong> Architecture</a></li><li class="chapter-item expanded "><a href="building.html"><strong aria-hidden="true">6.</strong> Building</a></li><li class="chapter-item expanded "><a href="running-locally.html"><strong aria-hidden="true">7.</strong> Running Locally</a></li><li class="chapter-item expanded "><a href="testing.html"><strong aria-hidden="true">8.</strong> Testing & CI</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Autoware Manual Control</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/evshary/autoware_manual_control" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="architecture"><a class="header" href="#architecture">Architecture</a></h1>
+<p>The node is a small, component-based system. A generic control loop drives the vehicle through a transport-blind gateway, taking intent from an <em>intent source</em> and pushing telemetry to a <em>telemetry sink</em>. The I/O and the transport are both swapped without touching the loop or the modes, because they meet only at a link-time seam.</p>
+<h2 id="directory-layout"><a class="header" href="#directory-layout">Directory layout</a></h2>
+<pre><code class="language-text">src/
+├── common/                   # Shared data, no behaviour
+│   ├── types.hpp             #   Gear, ShiftState, VehicleState, ControlCommand
+│   ├── intent.hpp            #   Intent  — the IntentSource payload
+│   └── telemetry.hpp         #   Telemetry — the TelemetrySink payload
+├── core/                     # Transport- and I/O-blind machinery
+│   ├── control_runtime.hpp   #   run_control_runtime&lt;IntentSource, TelemetrySink&gt; + RuntimeConfig
+│   ├── mode_manager.hpp      #   ModeManager: holds the active DriveMode
+│   ├── drive_mode.hpp        #   DriveMode interface (the strategy)
+│   ├── drive_mode_factory.*  #   DriveModeFactory: register/activate modes by name
+│   ├── register_modes.hpp    #   register_all_modes + activate_modes_from_config
+│   ├── autoware_gateway.hpp  #   AutowareGateway: the vehicle-side interface (Pimpl)
+│   └── parameter_reader.hpp  #   ParameterReader: transport-blind params (Pimpl)
+├── modes/                    # DriveMode strategies
+│   └── stop_mode.hpp  physics_mode.hpp  cruise_mode.hpp
+├── io/                       # Operator I/O adapters
+│   ├── intent/keyboard.hpp   zenoh.hpp      #   IntentSource: Intent update()
+│   └── telemetry/console.hpp zenoh.hpp      #   TelemetrySink: void publish(const Telemetry&amp;)
+├── transport/                # Autoware-side implementations (exactly one is linked)
+│   ├── rclcpp/   autoware_gateway.cpp  parameter_reader.cpp  manual_control_node.hpp
+│   └── zenoh/    autoware_gateway.cpp  parameter_reader.cpp  cdr.hpp  cli_params.hpp
+│                 typesupport_stub.cpp  generated/   # the vendored CDR codec
+├── keyboard_control.cpp      # Composition root: KeyboardIntent + ConsoleTelemetry
+└── zenoh_control.cpp         # Composition root: ZenohIntent + ZenohTelemetry
+</code></pre>
+<h2 id="the-control-loop"><a class="header" href="#the-control-loop">The control loop</a></h2>
+<p><code>run_control_runtime</code> (<code>src/core/control_runtime.hpp</code>) is a function template:</p>
+<pre><code class="language-cpp">template &lt;typename IntentSource, typename TelemetrySink&gt;
+void run_control_runtime(std::shared_ptr&lt;AutowareGateway&gt; gateway,
+                         IntentSource&amp; source, TelemetrySink&amp; sink,
+                         const RuntimeConfig&amp; cfg);
+</code></pre>
+<p>Each tick it calls <code>source.update()</code> for an <code>Intent</code>, reads <code>gateway-&gt;get_vehicle_state()</code>, runs the gear-shift state machine and the active mode via <code>ModeManager</code>, publishes the resulting <code>ControlCommand</code> with <code>gateway-&gt;publish_command()</code>, and pushes a <code>Telemetry</code> to <code>sink.publish()</code>. It includes none of the I/O or transport headers — it knows only the duck-typed <code>update()</code> / <code>publish()</code> and the <code>AutowareGateway</code> interface. A stale <code>IntentSource</code> simply returns a braking <code>Intent</code>, so the loop needs no special case for disconnection.</p>
+<h2 id="the-seam"><a class="header" href="#the-seam">The seam</a></h2>
+<p><a href="introduction.html#the-seam-that-makes-this-work">Introduction § The seam</a> explains <em>why</em> the <a href="introduction.html#the-matrix">matrix</a> is a build-time rather than a runtime choice; in terms of this layout, three mechanisms keep <code>core/</code> and <code>modes/</code> free of any concrete I/O or transport:</p>
+<ol>
+<li><strong>I/O — duck-typed template parameters.</strong> <code>run_control_runtime</code> names no base class; the composition root supplies the concrete <code>IntentSource</code> / <code>TelemetrySink</code> types and the loop is instantiated for them.</li>
+<li><strong>Transport — a Pimpl gateway.</strong> <code>AutowareGateway</code> (<code>src/core/autoware_gateway.hpp</code>) declares the interface; its <code>struct Impl</code> and the matching <code>static init_system</code> / <code>ok_system</code> / <code>shutdown_system</code> are defined only in the one <code>transport/*/autoware_gateway.cpp</code> that CMake links. The header pulls in neither <code>rclcpp</code> nor Zenoh.</li>
+<li><strong>Parameters — explicit instantiation.</strong> <code>ParameterReader</code> (<code>src/core/parameter_reader.hpp</code>) is a Pimpl whose <code>read&lt;T&gt;</code> is <code>extern template</code> in the header and instantiated once in the linked transport's <code>parameter_reader.cpp</code> — no <code>#ifdef</code>.</li>
+</ol>
+<p>An entry point (<code>keyboard_control.cpp</code>, <code>zenoh_control.cpp</code>) is therefore just a <em>composition root</em>: it constructs the I/O adapters and the gateway, registers and activates modes, and calls <code>run_control_runtime</code>. The choice of transport is made entirely in <code>CMakeLists.txt</code>.</p>
+<h2 id="how-to-add-an-operator-io"><a class="header" href="#how-to-add-an-operator-io">How to add an Operator I/O</a></h2>
+<p>An I/O is a pair of adapters plus a composition root.</p>
+<ol>
+<li><strong>Write the adapter(s).</strong> An intent source <code>struct</code> with <code>Intent update()</code> (put it under <code>src/io/intent/</code>), and/or a telemetry sink with <code>void publish(const Telemetry&amp;)</code> (under <code>src/io/telemetry/</code>). They share the same <code>Intent</code>/<code>Telemetry</code> vocabulary as every other I/O — see <code>src/io/intent/keyboard.hpp</code> for the smallest source and <code>src/io/telemetry/console.hpp</code> for the smallest sink.</li>
+<li><strong>Write a composition root</strong> <code>src/&lt;name&gt;_control.cpp</code> modelled on <code>keyboard_control.cpp</code>: build the gateway and reader, register and activate modes, construct your adapters, call <code>run_control_runtime</code>.</li>
+<li><strong>Add a build option + executable</strong> in <code>CMakeLists.txt</code> alongside <code>TELEOP_WITH_KEYBOARD</code> / <code>TELEOP_WITH_ZENOH</code> — one <code>option(...)</code> and one <code>add_executable(...)</code> per transport branch.</li>
+</ol>
+<p>Nothing in <code>core/</code>, <code>modes/</code> or <code>transport/</code> changes; the new I/O composes with either transport for free.</p>
+<h2 id="how-to-add-an-autoware-transport"><a class="header" href="#how-to-add-an-autoware-transport">How to add an Autoware transport</a></h2>
+<p>A transport is a gateway implementation plus a parameter reader.</p>
+<ol>
+<li><strong>Implement the gateway</strong> <code>src/transport/&lt;name&gt;/autoware_gateway.cpp</code>: define <code>AutowareGateway::Impl</code> and every method of the interface, plus the static <code>init_system</code> / <code>shutdown_system</code> / <code>ok_system</code> and <code>make_parameter_reader</code>.</li>
+<li><strong>Implement the reader</strong> <code>src/transport/&lt;name&gt;/parameter_reader.cpp</code>: define <code>ParameterReader::Impl</code> and the explicit instantiations of <code>read&lt;T&gt;</code> for the five supported types (<code>float</code>, <code>double</code>, <code>std::string</code>, <code>std::vector&lt;std::string&gt;</code>, <code>std::vector&lt;double&gt;</code>).</li>
+<li><strong>Add a branch</strong> in <code>CMakeLists.txt</code> for <code>TELEOP_AUTOWARE_TRANSPORT=&lt;name&gt;</code>: find its dependencies and append the two sources to <code>TELEOP_GATEWAY_SRC</code> for the keyboard and Zenoh executables.</li>
+</ol>
+<p>The control loop, the modes and every I/O are reused unchanged. The <code>native_zenoh</code> transport is the worked example of doing this without any ROS at all — see <a href="autoware-transport.html">Autoware Transport</a> and <a href="building.html">Building</a>.</p>
+<h2 id="how-to-add-a-drive-mode"><a class="header" href="#how-to-add-a-drive-mode">How to add a drive mode</a></h2>
+<p>Drive modes are a strategy pattern behind <code>DriveModeFactory</code>. The smallest worked example is <code>src/modes/stop_mode.hpp</code> (~40 lines) — read it first. To add one:</p>
+<ol>
+<li><strong>Implement</strong> <code>src/modes/&lt;name&gt;_mode.hpp</code>: a class inheriting <code>DriveMode</code> (<code>src/core/drive_mode.hpp</code>) with <code>static constexpr const char* kName = "&lt;name&gt;";</code>, a <code>struct Params</code> plus <code>static Params loadParams(const ParameterReader&amp;)</code> reading its tuning via <code>reader.read&lt;T&gt;(...)</code>, a constructor taking <code>const Params&amp;</code>, <code>getName()</code> (return <code>kName</code>), and <code>ControlCommand update(float dt, const Intent&amp;, const VehicleState&amp;)</code> (optionally <code>onEnter</code> / <code>onExit</code> / <code>getStatusString</code>).</li>
+<li><strong>Register</strong> it: one line <code>register_mode&lt;YourDriveMode&gt;(factory, reader);</code> in <code>register_all_modes</code> (<code>src/core/register_modes.hpp</code>).</li>
+<li><strong>Enable</strong> it: add its <code>kName</code> to the <code>modes:</code> list in your config (and a tuning block if it has params).</li>
+</ol>
+<p>One mode file, one register line, one config entry — no enum, no factory edits, no loop changes.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="configuration.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="building.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="configuration.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="building.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="mermaid.min.js"></script>
+        <script src="mermaid-init.js"></script>
+
+
+    </div>
+    </body>
+</html>

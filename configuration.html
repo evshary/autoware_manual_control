@@ -1,0 +1,299 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Configuration - Autoware Manual Control</title>
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="A modular manual-driving node for Autoware, organised around two independent axes: operator I/O and Autoware transport.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "rust";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="introduction.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="autoware-transport.html"><strong aria-hidden="true">2.</strong> Autoware Transport</a></li><li class="chapter-item expanded "><a href="cross-machine.html"><strong aria-hidden="true">3.</strong> Cross-Machine Remote Driving</a></li><li class="chapter-item expanded "><a href="configuration.html" class="active"><strong aria-hidden="true">4.</strong> Configuration</a></li><li class="chapter-item expanded "><a href="architecture.html"><strong aria-hidden="true">5.</strong> Architecture</a></li><li class="chapter-item expanded "><a href="building.html"><strong aria-hidden="true">6.</strong> Building</a></li><li class="chapter-item expanded "><a href="running-locally.html"><strong aria-hidden="true">7.</strong> Running Locally</a></li><li class="chapter-item expanded "><a href="testing.html"><strong aria-hidden="true">8.</strong> Testing & CI</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Autoware Manual Control</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/evshary/autoware_manual_control" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="configuration"><a class="header" href="#configuration">Configuration</a></h1>
+<p>All configuration lives under <code>config/</code>. The behaviour is driven by one file — a local, gitignored <code>config/teleop.yaml</code> you copy from the fully-commented <code>config/teleop.example.yaml</code>:</p>
+<pre><code class="language-bash">cp config/teleop.example.yaml config/teleop.yaml
+</code></pre>
+<p>The file is a <strong>standard ROS 2 params file</strong> (<code>/ManualControl: ros__parameters:</code>), and the same file feeds both transports unchanged; only the reading path differs (see <a href="#how-parameters-are-read">How parameters are read</a>). Every key is optional and falls back to the default shown below.</p>
+<h2 id="shared-keys"><a class="header" href="#shared-keys">Shared keys</a></h2>
+<p>These apply to every build.</p>
+<div class="table-wrapper"><table><thead><tr><th style="text-align: left">Key</th><th style="text-align: left">Type</th><th style="text-align: left">Default</th><th style="text-align: left">Meaning</th></tr></thead><tbody>
+<tr><td style="text-align: left"><code>operator_mode</code></td><td style="text-align: left">string</td><td style="text-align: left"><code>remote</code></td><td style="text-align: left">The AD-API operation mode this operator commands: <code>local</code> or <code>remote</code>. <code>STOP</code> is the implicit idle/safe operation mode; <code>Z</code> toggles between <code>STOP</code> and this mode — a single press with no separate engage key, after which the node auto-enables Autoware control once the drive mode is active (self-engage). Selects the heartbeat key (<code>/external/local/heartbeat</code> vs <code>/external/remote/heartbeat</code>) and which availability flag gates driving.</td></tr>
+<tr><td style="text-align: left"><code>modes</code></td><td style="text-align: left">list&lt;string&gt;</td><td style="text-align: left"><code>["stop", "physics", "cruise"]</code></td><td style="text-align: left">The active drive modes in <code>M</code>-cycle order. <strong>Must include <code>stop</code></strong> (the initial and emergency mode). An empty list, a missing <code>stop</code>, or an unknown name aborts startup with an explanatory error.</td></tr>
+<tr><td style="text-align: left"><code>control_rate_hz</code></td><td style="text-align: left">double</td><td style="text-align: left"><code>60.0</code></td><td style="text-align: left">Control-loop rate.</td></tr>
+<tr><td style="text-align: left"><code>shift_stop_tolerance</code></td><td style="text-align: left">float</td><td style="text-align: left"><code>0.05</code></td><td style="text-align: left">m/s — speed below which a pending gear shift proceeds (stop-wait-shift).</td></tr>
+<tr><td style="text-align: left"><code>shift_brake_accel</code></td><td style="text-align: left">float</td><td style="text-align: left"><code>-10.0</code></td><td style="text-align: left">m/s² — override acceleration applied while braking to a stop for a shift.</td></tr>
+<tr><td style="text-align: left"><code>init_pose.presets.names</code></td><td style="text-align: left">list&lt;string&gt;</td><td style="text-align: left"><code>["origin"]</code></td><td style="text-align: left">Names of the initial-pose presets cycled by the <code>R</code> key.</td></tr>
+<tr><td style="text-align: left"><code>init_pose.presets.&lt;name&gt;</code></td><td style="text-align: left">list&lt;double&gt;</td><td style="text-align: left"><code>[0, 0, 0, 0]</code></td><td style="text-align: left">The <code>[x, y, z, yaw]</code> (map frame) for each preset name. Pressing <code>R</code> cycles the names and seeds <code>/initialpose</code> from the matching array.</td></tr>
+</tbody></table>
+</div>
+<blockquote>
+<p>The two <code>init_pose</code> rows above are the <strong>code fallbacks</strong>, used only when the key is absent. The shipped <code>config/teleop.example.yaml</code> overrides them with a single preset named <code>start</code> on a drivable lane of the bundled sample map (<code>start: [3765.09, 73743.88, 0.0, -0.5445]</code>), so a fresh copy localises the demo in one <code>R</code> press; replace it with poses valid for your own map.</p>
+</blockquote>
+<h2 id="per-mode-tuning"><a class="header" href="#per-mode-tuning">Per-mode tuning</a></h2>
+<p>Each drive mode reads its own block; a mode that is not in <code>modes</code> is still registered but inert. The keys are exactly the fields read in each mode's <code>loadParams</code> (<code>src/modes/*_mode.hpp</code>).</p>
+<h3 id="physics--physicsdrivemode"><a class="header" href="#physics--physicsdrivemode"><code>physics:</code> — <code>PhysicsDriveMode</code></a></h3>
+<div class="table-wrapper"><table><thead><tr><th style="text-align: left">Key</th><th style="text-align: left">Default</th><th style="text-align: left">Meaning</th></tr></thead><tbody>
+<tr><td style="text-align: left"><code>physics.max_speed</code></td><td style="text-align: left"><code>27.78</code></td><td style="text-align: left">m/s (≈100 km/h) speed ceiling.</td></tr>
+<tr><td style="text-align: left"><code>physics.max_steer</code></td><td style="text-align: left"><code>0.6</code></td><td style="text-align: left">rad — steering limit.</td></tr>
+<tr><td style="text-align: left"><code>physics.steer_rate</code></td><td style="text-align: left"><code>0.8</code></td><td style="text-align: left">rad/s while a steer key is held.</td></tr>
+<tr><td style="text-align: left"><code>physics.steer_decay</code></td><td style="text-align: left"><code>1.0</code></td><td style="text-align: left">rad/s auto-center rate on release.</td></tr>
+<tr><td style="text-align: left"><code>physics.steer_deadzone</code></td><td style="text-align: left"><code>0.01</code></td><td style="text-align: left">rad.</td></tr>
+<tr><td style="text-align: left"><code>physics.accel_max</code></td><td style="text-align: left"><code>3.5</code></td><td style="text-align: left">m/s² at full throttle.</td></tr>
+<tr><td style="text-align: left"><code>physics.brake_max</code></td><td style="text-align: left"><code>5.0</code></td><td style="text-align: left">m/s² at full brake.</td></tr>
+<tr><td style="text-align: left"><code>physics.coast_decel</code></td><td style="text-align: left"><code>2.0</code></td><td style="text-align: left">m/s² with no input (engine braking).</td></tr>
+<tr><td style="text-align: left"><code>physics.max_vel_offset</code></td><td style="text-align: left"><code>3.0</code></td><td style="text-align: left">m/s — how far the velocity setpoint may lead the real speed (anti-windup).</td></tr>
+</tbody></table>
+</div>
+<h3 id="cruise--cruisedrivemode"><a class="header" href="#cruise--cruisedrivemode"><code>cruise:</code> — <code>CruiseDriveMode</code></a></h3>
+<div class="table-wrapper"><table><thead><tr><th style="text-align: left">Key</th><th style="text-align: left">Default</th><th style="text-align: left">Meaning</th></tr></thead><tbody>
+<tr><td style="text-align: left"><code>cruise.max_speed</code></td><td style="text-align: left"><code>27.78</code></td><td style="text-align: left">m/s speed ceiling.</td></tr>
+<tr><td style="text-align: left"><code>cruise.steer_rate</code></td><td style="text-align: left"><code>0.3</code></td><td style="text-align: left">rad/s.</td></tr>
+<tr><td style="text-align: left"><code>cruise.steer_limit</code></td><td style="text-align: left"><code>0.6</code></td><td style="text-align: left">rad.</td></tr>
+<tr><td style="text-align: left"><code>cruise.vel_inc_hold_kph_s</code></td><td style="text-align: left"><code>5.0</code></td><td style="text-align: left">km/h per second while holding throttle.</td></tr>
+<tr><td style="text-align: left"><code>cruise.vel_dec_hold_kph_s</code></td><td style="text-align: left"><code>10.0</code></td><td style="text-align: left">km/h per second while holding brake.</td></tr>
+<tr><td style="text-align: left"><code>cruise.accel_p_gain</code></td><td style="text-align: left"><code>3.0</code></td><td style="text-align: left">proportional gain on the speed error.</td></tr>
+<tr><td style="text-align: left"><code>cruise.max_accel</code></td><td style="text-align: left"><code>5.0</code></td><td style="text-align: left">m/s² ceiling.</td></tr>
+<tr><td style="text-align: left"><code>cruise.min_accel</code></td><td style="text-align: left"><code>-10.0</code></td><td style="text-align: left">m/s² floor.</td></tr>
+</tbody></table>
+</div>
+<h3 id="stop--stopdrivemode"><a class="header" href="#stop--stopdrivemode"><code>stop:</code> — <code>StopDriveMode</code></a></h3>
+<div class="table-wrapper"><table><thead><tr><th style="text-align: left">Key</th><th style="text-align: left">Default</th><th style="text-align: left">Meaning</th></tr></thead><tbody>
+<tr><td style="text-align: left"><code>stop.brake_accel</code></td><td style="text-align: left"><code>-10.0</code></td><td style="text-align: left">m/s² braking command in <code>STOP</code> / emergency.</td></tr>
+</tbody></table>
+</div>
+<h2 id="zenoh-keys"><a class="header" href="#zenoh-keys">Zenoh keys</a></h2>
+<p>These are read only by the Zenoh paths — the <code>zenoh_control</code> entry point (operator I/O) and the <code>native_zenoh</code> transport (<code>AutowareGateway</code>). They are inert in a keyboard + <code>rclcpp</code> build.</p>
+<div class="table-wrapper"><table><thead><tr><th style="text-align: left">Key</th><th style="text-align: left">Type</th><th style="text-align: left">Default</th><th style="text-align: left">Meaning</th></tr></thead><tbody>
+<tr><td style="text-align: left"><code>scope</code></td><td style="text-align: left">string</td><td style="text-align: left"><code>v1</code></td><td style="text-align: left">Key prefix. Operator I/O uses <code>manual_control/&lt;scope&gt;/intent</code> and <code>manual_control/&lt;scope&gt;/telemetry</code>; the <code>native_zenoh</code> transport uses <code>&lt;scope&gt;/…</code> for the Autoware topics. Must match the DDS↔Zenoh bridge namespace (e.g. <code>-n /v1</code>).</td></tr>
+<tr><td style="text-align: left"><code>arrival_timeout_ms</code></td><td style="text-align: left">float</td><td style="text-align: left"><code>500.0</code></td><td style="text-align: left">Two uses, both in the Zenoh paths: the <code>zenoh_control</code> operator-intent watchdog (no fresh intent within this window → deadman brake), and the <code>native_zenoh</code> AD-API service-call timeout.</td></tr>
+<tr><td style="text-align: left"><code>zenoh_config</code></td><td style="text-align: left">string</td><td style="text-align: left"><code>""</code></td><td style="text-align: left">Path to a Zenoh JSON5 config; empty means Zenoh's built-in default. In a <code>zenoh × native_zenoh</code> build, both the operator and transport sessions read it, so they join the same Zenoh network. See <a href="cross-machine.html">Cross-Machine Remote Driving</a>.</td></tr>
+</tbody></table>
+</div>
+<h2 id="how-parameters-are-read"><a class="header" href="#how-parameters-are-read">How parameters are read</a></h2>
+<p>The same YAML is consumed two different ways, behind the one transport-blind <code>ParameterReader</code> interface (<code>src/core/parameter_reader.hpp</code>):</p>
+<ul>
+<li><strong><code>rclcpp</code></strong> — the file is passed as-is with <code>--ros-args --params-file</code>; parameters arrive as ROS parameters. The <code>ManualControl</code> node declares parameters from the overrides; the reader coerces a YAML integer to the requested float/double rather than throwing (<code>src/transport/rclcpp/parameter_reader.cpp</code>).</li>
+<li><strong><code>native_zenoh</code></strong> — the binary reads the same file from <code>--config &lt;path&gt;</code>. <code>src/transport/zenoh/parameter_reader.cpp</code> parses it with libyaml (statically linked), unwraps the <code>&lt;node&gt;: {ros__parameters: {...}}</code> envelope (plain nested YAML without one also works), and flattens the DOM to dotted names: a mapping recurses with its key appended (<code>physics: { max_speed: x }</code> → <code>physics.max_speed</code>), a sequence becomes a vector, a scalar becomes a one-element vector. libyaml resolves quotes, comments, flow style and UTF-8, so inline sequences (<code>["stop", "physics"]</code>), quoted values with trailing comments, and empty-string-as-default all behave as you would expect. A non-numeric value where a number is expected logs a warning and falls back to the default.</li>
+</ul>
+<p>Both readers expose the same generic <code>read&lt;T&gt;(name, default)</code> for <code>float</code>, <code>double</code>, <code>std::string</code>, <code>std::vector&lt;std::string&gt;</code>, and <code>std::vector&lt;double&gt;</code>; each transport provides the one explicit instantiation, so neither the core nor the modes ever see <code>rclcpp</code> or Zenoh.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="cross-machine.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="architecture.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="cross-machine.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="architecture.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="mermaid.min.js"></script>
+        <script src="mermaid-init.js"></script>
+
+
+    </div>
+    </body>
+</html>

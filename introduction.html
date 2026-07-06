@@ -1,0 +1,272 @@
+<!DOCTYPE HTML>
+<html lang="en" class="rust" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Introduction - Autoware Manual Control</title>
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="A modular manual-driving node for Autoware, organised around two independent axes: operator I/O and Autoware transport.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "rust";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="introduction.html" class="active"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="autoware-transport.html"><strong aria-hidden="true">2.</strong> Autoware Transport</a></li><li class="chapter-item expanded "><a href="cross-machine.html"><strong aria-hidden="true">3.</strong> Cross-Machine Remote Driving</a></li><li class="chapter-item expanded "><a href="configuration.html"><strong aria-hidden="true">4.</strong> Configuration</a></li><li class="chapter-item expanded "><a href="architecture.html"><strong aria-hidden="true">5.</strong> Architecture</a></li><li class="chapter-item expanded "><a href="building.html"><strong aria-hidden="true">6.</strong> Building</a></li><li class="chapter-item expanded "><a href="running-locally.html"><strong aria-hidden="true">7.</strong> Running Locally</a></li><li class="chapter-item expanded "><a href="testing.html"><strong aria-hidden="true">8.</strong> Testing & CI</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Autoware Manual Control</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/evshary/autoware_manual_control" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="introduction"><a class="header" href="#introduction">Introduction</a></h1>
+<p>Autoware Manual Control is a modular manual-driving node for <a href="https://github.com/autowarefoundation/autoware.universe">Autoware</a>. A human or a program supplies driving intent — throttle, brake, steer, gear, engage, mode — and the node turns it into the control, gear and operation-mode commands an Autoware vehicle expects, while feeding live telemetry back. It ships ready to drive from a keyboard, and it is built so the <em>same</em> control logic can be driven from a remote client over <a href="https://zenoh.io/">Zenoh</a> and can talk to Autoware either over native ROS 2 or with no ROS at all.</p>
+<p>The whole design rests on keeping two concerns apart.</p>
+<h2 id="the-two-axes"><a class="header" href="#the-two-axes">The two axes</a></h2>
+<p>There are two questions you answer independently when you run this node.</p>
+<p><strong>1. Operator I/O — where does intent come from, and where does telemetry go?</strong></p>
+<p>This is the human/client side. It is chosen at build time by which entry point you compile:</p>
+<ul>
+<li><strong>keyboard</strong> — <code>KeyboardIntent</code> (<code>src/io/intent/keyboard.hpp</code>) reads <code>WASD</code> and the action keys from a raw terminal and produces an <code>Intent</code> each tick. It is the sole stdin reader.</li>
+<li><strong>console</strong> — <code>ConsoleTelemetry</code> (<code>src/io/telemetry/console.hpp</code>) renders each <code>Telemetry</code> to the terminal. It is the sole stdout writer. Keyboard and console are the two halves of the <em>local terminal operator</em>: they are compiled together into the <code>keyboard_control</code> executable by the CMake option <code>TELEOP_WITH_KEYBOARD</code> (default <code>ON</code>).</li>
+<li><strong>zenoh</strong> — <code>ZenohIntent</code> (<code>src/io/intent/zenoh.hpp</code>) and <code>ZenohTelemetry</code> (<code>src/io/telemetry/zenoh.hpp</code>) exchange the same <code>Intent</code> and <code>Telemetry</code> as JSON over Zenoh keys, so any networked client can drive and observe. They are compiled into the <code>zenoh_control</code> executable by <code>TELEOP_WITH_ZENOH</code> (default <code>OFF</code>).</li>
+</ul>
+<p><strong>2. Autoware transport — how does the node talk to Autoware?</strong></p>
+<p>This is the vehicle side. It is chosen by the CMake cache variable <code>TELEOP_AUTOWARE_TRANSPORT</code> (<code>CMakeLists.txt</code> defines it with allowed values <code>rclcpp | native_zenoh</code>, default <code>rclcpp</code>):</p>
+<ul>
+<li><strong><code>rclcpp</code></strong> — native ROS 2. The node publishes control/gear/initial-pose, subscribes vehicle and operation-mode state, and calls the AD-API operation-mode services through <code>rclcpp</code>. Build it into any Autoware workspace as an ordinary ROS package.</li>
+<li><strong><code>native_zenoh</code></strong> — ROS-free. The node speaks Autoware's DDS/CDR wire format <em>directly</em> over Zenoh. There is no <code>rclcpp</code>, no message packages, no rosidl tooling in the build; the binary's only runtime library is Zenoh's <code>libzenohc</code>, with Fast-CDR and libyaml linked in statically. The wire bytes are correct by construction — the codec <em>is</em> the <code>rosidl_typesupport_fastrtps_cpp</code> serialiser Autoware itself uses (see <a href="autoware-transport.html">Autoware Transport</a>).</li>
+</ul>
+<p>Zenoh therefore appears on <strong>both</strong> axes, but they are genuinely different uses and you select them separately:</p>
+<ul>
+<li>Zenoh as <em>operator I/O</em> carries <code>Intent</code>/<code>Telemetry</code> as <strong>JSON</strong> on <code>manual_control/&lt;scope&gt;/…</code> keys — a convenient, human-readable contract for a UI.</li>
+<li>Zenoh as <em>Autoware transport</em> carries Autoware messages as <strong>DDS-CDR</strong> on <code>&lt;scope&gt;/…</code> keys — the exact bytes Autoware's DDS expects.</li>
+</ul>
+<p>You can use one, the other, both, or neither-via-Zenoh.</p>
+<h2 id="the-matrix"><a class="header" href="#the-matrix">The matrix</a></h2>
+<p>The two axes are orthogonal. Each of the two I/O entry points links against either Autoware Transport, so the buildable configurations are their cartesian product: two executables × two transports = four binaries.</p>
+<div class="table-wrapper"><table><thead><tr><th style="text-align: left">Operator I/O \ Transport</th><th style="text-align: left"><code>rclcpp</code> (ROS)</th><th style="text-align: left"><code>native_zenoh</code> (ROS-free)</th></tr></thead><tbody>
+<tr><td style="text-align: left"><strong><code>keyboard_control</code></strong> (keyboard intent + console telemetry)</td><td style="text-align: left">✅ keyboard demo</td><td style="text-align: left">✅ local terminal, no ROS</td></tr>
+<tr><td style="text-align: left"><strong><code>zenoh_control</code></strong> (zenoh JSON intent + telemetry)</td><td style="text-align: left">✅ UI over Zenoh, Autoware over ROS</td><td style="text-align: left">✅ cross-machine remote driving, fully ROS-free</td></tr>
+</tbody></table>
+</div>
+<p>Each row is one entry point. <code>keyboard_control</code> bundles the keyboard intent source and the console telemetry sink — the two halves of the local terminal operator, never selected apart — while <code>zenoh_control</code> carries both halves over Zenoh. They are paired in one row because they compile as a unit, yet each half is independently transport-agnostic, which is why either executable links cleanly against either transport. The two I/O build flags select which executable(s) build, and <code>TELEOP_AUTOWARE_TRANSPORT</code> decides which transport they link against.</p>
+<p>Three cells are the ones worth naming:</p>
+<ul>
+<li><strong><code>keyboard_control</code> × <code>rclcpp</code></strong> — the getting-started demo. The default build; <code>ros2 run autoware_manual_control keyboard_control</code>.</li>
+<li><strong><code>zenoh_control</code> × <code>rclcpp</code></strong> — drive from your own client over Zenoh while the node integrates with Autoware over ROS. The everyday integration path: your UI publishes JSON intent, the node drives a normal ROS Autoware.</li>
+<li><strong><code>zenoh_control</code> × <code>native_zenoh</code></strong> — operator I/O over Zenoh <em>and</em> Autoware transport over Zenoh. No ROS on the operator side at all: suitable for <a href="cross-machine.html">cross-machine remote driving</a> over the Internet.</li>
+</ul>
+<h2 id="the-seam-that-makes-this-work"><a class="header" href="#the-seam-that-makes-this-work">The seam that makes this work</a></h2>
+<p>The four cells are not four code paths. They exist because operator I/O and Autoware transport meet at exactly one narrow, <em>link-time</em> seam, and neither side knows the other's concrete type.</p>
+<ul>
+<li>The control loop, <code>run_control_runtime</code> (<code>src/core/control_runtime.hpp</code>), is a function template over an <code>IntentSource</code> (anything with <code>Intent update()</code>) and a <code>TelemetrySink</code> (anything with <code>void publish(const Telemetry &amp;)</code>). It calls only those two methods, plus an <code>AutowareGateway</code>. It contains no <code>#include</code> of any I/O or transport implementation.</li>
+<li>The vehicle side hides behind <code>AutowareGateway</code> (<code>src/core/autoware_gateway.hpp</code>), a Pimpl class whose <code>Impl</code> is defined <em>only</em> in the selected transport's <code>.cpp</code> (<code>src/transport/rclcpp/autoware_gateway.cpp</code> or <code>src/transport/zenoh/autoware_gateway.cpp</code>). The header pulls in neither <code>rclcpp</code> nor Zenoh. CMake compiles exactly one of the two <code>autoware_gateway.cpp</code> files into the target, so the transport is decided by <em>which object file is linked</em> — not by a runtime switch or a config flag.</li>
+<li>Parameters cross the same way. <code>ParameterReader</code> (<code>src/core/parameter_reader.hpp</code>) is a transport-blind Pimpl; its <code>read&lt;T&gt;</code> is explicitly instantiated once in the linked transport's <code>parameter_reader.cpp</code>, so the rclcpp build reads ROS parameters and the native build reads a YAML file, behind one interface.</li>
+</ul>
+<p>Because the loop and the gateway interface are fixed, an entry point is just a <em>composition root</em>: <code>keyboard_control.cpp</code> wires <code>KeyboardIntent</code> + <code>ConsoleTelemetry</code> into the loop; <code>zenoh_control.cpp</code> wires <code>ZenohIntent</code> + <code>ZenohTelemetry</code>. Add an I/O and you write one composition root; add a transport and you write one <code>autoware_gateway.cpp</code> (and a <code>parameter_reader.cpp</code>). Nothing in <code>core/</code> or <code>modes/</code> changes. That is what the rest of this book builds on — see <a href="architecture.html">Architecture</a> for the layout and the extension points.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+
+                            <a rel="next prefetch" href="autoware-transport.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+
+                    <a rel="next prefetch" href="autoware-transport.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="mermaid.min.js"></script>
+        <script src="mermaid-init.js"></script>
+
+
+    </div>
+    </body>
+</html>
