@@ -78,7 +78,7 @@ The control loop, the modes and every I/O are reused unchanged. The `native_zeno
 
 Drive modes are a strategy pattern behind `DriveModeFactory`. The smallest worked example is `src/modes/stop_mode.hpp` (~40 lines) — read it first. To add one:
 
-1. **Implement** `src/modes/<name>_mode.hpp`: a class inheriting `DriveMode` (`src/core/drive_mode.hpp`) with `static constexpr const char* kName = "<name>";`, a `struct Params` plus `static Params loadParams(const ParameterReader&)` reading its tuning via `reader.read<T>(...)`, a constructor taking `const Params&`, and `ControlCommand update(float dt, const Intent&, const VehicleState&)` (optionally `onEnter` / `onExit` / `getStatusString`).
+1. **Implement** `src/modes/<name>_mode.hpp`: a class inheriting `DriveMode` (`src/core/drive_mode.hpp`) with `static constexpr const char* kName = "<name>";`, a `struct Params` plus `static Params loadParams(const ParameterReader&)` reading its tuning via `reader.read<T>(...)`, a constructor taking `const Params&`, `getName()` (return `kName`), and `ControlCommand update(float dt, const Intent&, const VehicleState&)` (optionally `onEnter` / `onExit` / `getStatusString`).
 2. **Register** it: one line `register_mode<YourDriveMode>(factory, reader);` in `register_all_modes` (`src/core/register_modes.hpp`).
 3. **Enable** it: add its `kName` to the `modes:` list in your config (and a tuning block if it has params).
 

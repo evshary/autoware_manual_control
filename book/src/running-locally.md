@@ -1,6 +1,6 @@
 # Running Locally
 
-`run_containers.sh` brings up the whole stack **built from this checkout** on one machine: Autoware, the teleop node compiled from source, and — on the Zenoh transport — the DDS↔Zenoh bridge. It is the development counterpart to the prebuilt release image: where the Quickstart's `docker-compose-release.yaml` pulls a published `autoware:universe`-based teleop image, this stack uses `docker-compose.yaml`, which builds the teleop service locally (`build: .`) from the working tree. That tree is also bind-mounted into the container, so `run_teleop.sh` recompiles against your edits on each attach.
+`run_containers.sh` brings up the whole stack **built from this checkout** on one machine: Autoware, the teleop node compiled from source, and — on the Zenoh transport — the DDS↔Zenoh bridge. It is the development counterpart to the prebuilt release image: where the README Quickstart's `docker-compose-release.yaml` pulls a published image carrying the Autoware runtime, this stack uses `docker-compose.yaml`, which builds the teleop service locally (`build: .`) from the working tree. That tree is also bind-mounted into the container, so `run_teleop.sh` recompiles against your edits on each attach.
 
 ## Bringing the stack up
 
