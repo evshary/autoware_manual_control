@@ -26,7 +26,7 @@ ZENOH_CONNECT=tcp/<remote>:7447 ./run_containers.sh --operator up
 
 Autoware itself still speaks DDS. To put its topics on Zenoh, a [`zenoh-bridge-ros2dds`](https://github.com/eclipse-zenoh/zenoh-plugin-ros2dds) runs *next to* Autoware, sharing its DDS domain, and serves Zenoh on TCP. The shipped compose stack runs `eclipse/zenoh-bridge-ros2dds:1.9.0` with `network_mode: host`, launched as `-n /v1 -c /config/zenoh-bridge.json5 -l tcp/0.0.0.0:7447` so every bridged key is prefixed with the `/v1` scope and the bridge listens on 7447. `config/zenoh-bridge.json5` is deliberately minimal: `mode: "peer"`, an empty `listen` (supplied by the launch command instead, so a connect-only bridge can simply drop it), and an **allow-list** under `plugins.ros2dds.allow` that is exactly the topics and services the node touches — nothing else crosses the bridge. On the wire it exposes `v1/vehicle/status/...` etc., which is exactly what the gateway's scope-prefixed keys address.
 
-For the NAT case (below) the bridge instead dials **out** to a router. `run_containers.sh` injects that: with `ZENOH_CONNECT` set it launches the bridge as `-e <endpoint> client` — connecting out, as a client, with no `-l` so it never contends for the port.
+For the NAT case (below) the bridge instead dials **out** to a router. `run_containers.sh` injects that: with `ZENOH_CONNECT` set it launches the bridge with `-e <endpoint>` and no `-l` (so it never contends for the port), and appends the `ZENOH_MODE` positional when that is set — `client` for a router, the peer default otherwise.
 
 ## No discovery: one explicit endpoint
 
@@ -80,7 +80,7 @@ A mesh VPN — [Tailscale](https://tailscale.com/), plain [WireGuard](https://ww
 
 When neither end has a reachable address, put a Zenoh router (`zenohd`) on a host both can reach — typically a small public VM — and have the operator **and** the vehicle each `connect` **out** to it. Both connections are outbound, so neither side needs a public IP or an inbound port; the router is the only publicly reachable component, which is what solves NAT.
 
-The router relays only between **clients**, not between two peers — so both ends join as clients. On the vehicle side `run_containers.sh` does this automatically (the injected bridge command ends in `client`); on the operator side, set `ZENOH_MODE=client`.
+The router relays only between **clients**, not between two peers — so both ends join as clients: set `ZENOH_MODE=client` on the vehicle side (it becomes the injected bridge command's mode positional) and on the operator side alike.
 
 ```mermaid
 flowchart LR
@@ -108,10 +108,10 @@ flowchart LR
 docker run --rm -p 7447:7447 eclipse/zenoh:1.9.0 -l tcp/0.0.0.0:7447
 ```
 
-**2. Vehicle host** — Autoware plus the bridge, the bridge dialing the router (the script makes it a client):
+**2. Vehicle host** — Autoware plus the bridge, the bridge dialing the router as a client:
 
 ```bash
-ZENOH_CONNECT=tcp/<router-ip>:7447 ./run_containers.sh up --transport zenoh
+ZENOH_CONNECT=tcp/<router-ip>:7447 ZENOH_MODE=client ./run_containers.sh up --transport zenoh
 ```
 
 **3. Operator host** — the minimal teleop, dialing the same router as a client:
@@ -128,4 +128,4 @@ The teleop now drives the vehicle through the router. `run_teleop.sh` runs `keyb
 Over the public Internet this link carries live vehicle control. It **MUST** be encrypted and authenticated end to end — an unauthenticated Zenoh endpoint on a public IP is an open door to the vehicle. Two layers apply:
 
 - **Transport security (required).** Zenoh natively supports TLS (optionally mutual TLS) and username/password auth. To turn it on, switch each endpoint's scheme from `tcp/…` to `tls/…` and add a `transport.link.tls` block (plus `transport.auth` for credentials) to the Zenoh config on **both** ends; `config/zenoh-client.example.json5` and `config/zenoh-bridge.json5` carry a one-line pointer back to this section for exactly that. Generating and distributing the certificates and credentials is the operator's responsibility, and is deliberately left to the deployment — but the link is not safe on the public Internet until it is done. (A VPN, above, satisfies this requirement at the network layer instead.)
-- **Deadman (already on).** Independently of the link, the control loop fails safe on latency or loss: if no fresh intent arrives within `arrival_timeout_ms` (default 500 ms), the node deadman-brakes until input resumes (see [Configuration](configuration.md#zenoh-keys)). A degraded or dropped link cannot leave the vehicle driving.
+- **Deadman (on the remote-I/O leg).** With `zenoh_control`, the control loop fails safe on latency or loss: if no fresh intent arrives within `arrival_timeout_ms` (default 500 ms), the node deadman-brakes until input resumes (see [Configuration](configuration.md#zenoh-keys)), so a degraded or dropped operator link cannot leave the vehicle driving. The shipped `--operator` flow runs `keyboard_control`, whose intent is local — there the timeout only bounds the AD-API service calls, and link security is what protects the Autoware-transport leg.

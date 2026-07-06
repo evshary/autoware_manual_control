@@ -30,7 +30,7 @@ ctest --test-dir build --output-on-failure
 
 ### `test_param_reader` — the native parameter reader
 
-10 tests pinning the `native_zenoh` reader's contract: dotted nested keys, inline string and float sequences, type-mismatch fallback, empty-string-as-default, quoting and trailing-comment semantics, independent sibling sections, and the missing-file all-defaults case.
+12 tests pinning the `native_zenoh` reader's contract: dotted nested keys, inline string and float sequences, type-mismatch fallback, empty-string-as-default, present-but-empty sequences, quoting and trailing-comment semantics, independent sibling sections, the `ros__parameters` envelope unwrap, and the missing-file all-defaults case.
 
 ## CI
 
@@ -55,7 +55,7 @@ ROS is needed in exactly one place: confirming the *committed goldens still matc
 RMW_IMPLEMENTATION=rmw_cyclonedds_cpp python3 test/capture_golden.py --check
 ```
 
-`test/capture_golden.py` is a separate refresh/drift tool, **not** part of `colcon test`. It re-serialises every production and test-corpus message through `rclpy` under `rmw_cyclonedds_cpp` — i.e. the live DDS-CDR wire — and `--check` diffs that against the committed goldens. A drifted Autoware message therefore turns CI red and prompts a re-vendor (`tools/vendor_idl.sh`, see [Building](building.md#regenerating-the-codec)). With no flag, the same script *rewrites* the goldens.
+`test/capture_golden.py` is a separate refresh/drift tool, **not** part of `colcon test`. It re-serialises every production and test-corpus message through `rclpy` under `rmw_cyclonedds_cpp` — i.e. the live DDS-CDR wire — and `--check` diffs that against the committed goldens. A drifted Autoware message therefore turns CI red and prompts a re-vendor (`tools/vendor_idl.sh`, see [Building](building.md#regenerating-the-codec)). With no flag, the same script prints the freshly captured bytes for pasting into `test_cdr.cpp`'s `GOLDEN(...)` literals.
 
 Together the two jobs close the loop: `build-rosfree` proves the shipped binary carries the codec with no ROS, and `golden-drift` proves that codec still equals the real wire.
 

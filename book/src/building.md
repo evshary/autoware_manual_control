@@ -27,7 +27,7 @@ Getting the Zenoh SDK:
 
 ## The ROS-free build (`native_zenoh`)
 
-With `TELEOP_AUTOWARE_TRANSPORT=native_zenoh`, `ament_cmake` is optional and skipped when absent (`CMakeLists.txt`): the package builds as a plain CMake project. The dependencies are only the Zenoh SDK, `nlohmann_json`, a system `libyaml` (linked **static**, so no `libyaml.so` joins the runtime), and Fast-CDR — which CMake fetches itself (`FetchContent`, pinned `v1.1.1`, built static + PIC and folded into the binary). No ROS, no message packages, no rosidl tooling.
+With `TELEOP_AUTOWARE_TRANSPORT=native_zenoh`, `ament_cmake` is optional and skipped when absent (`CMakeLists.txt`): the package builds as a plain CMake project. The dependencies are only the Zenoh SDK, `nlohmann_json`, a system `libyaml` (linked **static**, so no `libyaml.so` joins the runtime), and Fast-CDR — which CMake fetches itself (`FetchContent`, pinned `v1.1.1`, built static + PIC and folded into the binary). No ROS, no message packages, no rosidl tooling. Configure from a shell that has **not** sourced ROS: a sourced environment makes CMake find `ament_cmake` and take the ament path instead.
 
 ```bash
 cmake -S . -B build \
@@ -35,7 +35,7 @@ cmake -S . -B build \
   -DTELEOP_WITH_ZENOH=ON -DTELEOP_WITH_KEYBOARD=OFF \
   -DZENOH_VENDOR_PREFIX=/path/to/zenoh   # omit if zenohc/zenohcxx are installed system-wide
 cmake --build build -j
-./build/zenoh_control --config config/teleop.yaml
+./build/zenoh_control --config config/teleop.example.yaml   # or your config/teleop.yaml copy
 ```
 
 The resulting binary links only `libzenohc`, the static Fast-CDR and the static libyaml, plus the C/C++ runtime — and its wire bytes are correct by construction: it runs the same `rosidl_typesupport_fastrtps_cpp` serialiser `rmw_fastrtps` uses (see [Autoware Transport](autoware-transport.md)). You can also build the local-terminal operator with no ROS by flipping the I/O flags (`-DTELEOP_WITH_KEYBOARD=ON -DTELEOP_WITH_ZENOH=OFF`); CMake then builds `keyboard_control` against the same ROS-free transport.
@@ -58,6 +58,6 @@ tools/vendor_idl.sh                 # rewrites src/transport/zenoh/generated/, t
 1. Builds the rosidl generators from the tiny `tools/regen` ament package (`tools/regen/CMakeLists.txt` lists the wire contract as `TELEOP_MSG_IDL`; `stage_idl.py` stages the installed `.idl` under this project's namespace so the generated types are namespaced correctly). `tools/COLCON_IGNORE` keeps this helper package out of the normal workspace build.
 2. Copies the generated `rosidl_generator_cpp` and `rosidl_typesupport_fastrtps_cpp` output into `src/transport/zenoh/generated/`.
 3. Computes the include closure of that generated code with `g++ -M` and vendors the external rosidl runtime headers it pulls in (`rosidl_runtime_c`, `rosidl_runtime_cpp`, `rosidl_typesupport_*`, `rmw`, `rcutils`).
-4. Writes the files and reports the counts — it does not `git add` them, so commit the result yourself.
+4. Reports the counts — it does not `git add` anything, so commit the result yourself.
 
 After regenerating, the CI golden-drift guard ([Testing & CI](testing.md)) confirms the new bytes still match a live rmw. CI flags when a regen is *due* by failing that same guard against the old committed bytes.
