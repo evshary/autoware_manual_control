@@ -10,10 +10,10 @@ namespace autoware::manual_control::zenoh_params
 {
 
 // Immutable view of the parameters resolved at startup: the contents of the
-// `--config <yaml>` file, a plain nested YAML document, flattened to dotted
-// names (physics: { max_speed: x } -> "physics.max_speed"). A scalar is a
-// one-element vector; a sequence keeps its elements. No ROS conventions: no
-// node/parameter envelope to strip, no env overlay -- a pure load-time lookup.
+// `--config <yaml>` file (a ROS 2 params envelope is unwrapped, plain nested
+// YAML taken as-is), flattened to dotted names (physics: { max_speed: x } ->
+// "physics.max_speed"). A scalar is a one-element vector; a sequence keeps
+// its elements. No env overlay -- a pure load-time lookup.
 class ParamMap
 {
 public:
