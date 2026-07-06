@@ -1,0 +1,53 @@
+{
+  // ROS 2 / DDS <-> Zenoh bridge for the native_zenoh teleop transport.
+  // The bridge co-locates with Autoware's DDS and serves Zenoh on 7447 so the
+  // teleop's AutowareGateway can drive the vehicle over Zenoh. Launched under a
+  // namespace (e.g. `-n /v1`) so every key below is prefixed with that scope.
+  mode: "peer",
+  // Inbound listen comes from the launch command (`-l tcp/0.0.0.0:7447`) so a
+  // connect-only bridge (dialing a router) can drop it and not contend for the
+  // port; a standalone bridge can hard-code an endpoint here instead.
+  listen: { endpoints: [] },
+  // NAT case: connect OUT to a reachable Zenoh router instead of relying on
+  // inbound `listen`. run_containers.sh injects ZENOH_CONNECT here (as `-e <ep>`,
+  // with no `-l`, so the bridge is connect-only); fill it in directly for a
+  // standalone bridge. Empty = listen-only (default).
+  connect: { endpoints: [] },
+  // TLS/auth (required over the Internet): use tls/… endpoints and a transport.link.tls
+  // block; see the book's Security section.
+  plugins: {
+    ros2dds: {
+      // Allowlist is exactly the topics/services the teleop touches; nothing else
+      // crosses the bridge.
+      allow: {
+        // DDS -> Zenoh: vehicle/operation state the teleop subscribes to.
+        publishers: [
+          "/vehicle/status/velocity_status",
+          "/vehicle/status/steering_status",
+          "/vehicle/status/gear_status",
+          "/api/operation_mode/state",
+          "/api/localization/initialization_state",
+        ],
+        // Zenoh -> DDS: the control/gear commands, heartbeat, and the operator's
+        // initial-pose seed the teleop publishes.
+        subscribers: [
+          "/initialpose",
+          "/external/selected/control_cmd",
+          "/external/selected/gear_cmd",
+          "/external/local/heartbeat",
+          "/external/remote/heartbeat",
+        ],
+        // AD-API operation-mode services the teleop calls (self-engage + mode switch).
+        service_servers: [
+          "/api/operation_mode/enable_autoware_control",
+          "/api/operation_mode/change_to_stop",
+          "/api/operation_mode/change_to_local",
+          "/api/operation_mode/change_to_remote",
+        ],
+        service_clients: ["/all_ignore"],
+        action_servers: ["/all_ignore"],
+        action_clients: ["/all_ignore"],
+      },
+    },
+  },
+}

@@ -1,0 +1,89 @@
+name: Test
+
+on:
+  push:
+    branches: [ "main", "feat/*" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  # The native_zenoh transport builds with no ROS: CMake + a C++ compiler +
+  # Fast-CDR compile the vendored codec under src/transport/zenoh/generated.
+  build-rosfree:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies (no ROS)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake git ca-certificates curl \
+            nlohmann-json3-dev libyaml-dev libgtest-dev
+          sudo mkdir -p /etc/apt/keyrings
+          curl -L https://download.eclipse.org/zenoh/debian-repo/zenoh-public-key \
+            | sudo gpg --dearmor --yes --output /etc/apt/keyrings/zenoh-public-key.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/zenoh-public-key.gpg] https://download.eclipse.org/zenoh/debian-repo/ /" \
+            | sudo tee /etc/apt/sources.list.d/zenoh.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y libzenohc-dev libzenohcpp-dev
+
+      - name: Assert the environment has no ROS
+        run: |
+          test ! -d /opt/ros
+          test -z "${AMENT_PREFIX_PATH}"
+
+      - name: Build (plain CMake, native_zenoh transport)
+        run: |
+          cmake -S . -B build \
+            -DTELEOP_AUTOWARE_TRANSPORT=native_zenoh \
+            -DTELEOP_WITH_ZENOH=ON -DTELEOP_WITH_KEYBOARD=OFF
+          cmake --build build -j"$(nproc)"
+
+      - name: Byte-perfect gate (test_cdr + test_param_reader)
+        run: ctest --test-dir build --output-on-failure
+
+  # ROS is needed only here: re-capture the wire bytes from a real rmw and diff
+  # them against the committed goldens, so a drifted Autoware message turns CI red
+  # and prompts a re-vendor (tools/vendor_idl.sh).
+  golden-drift:
+    runs-on: ubuntu-latest
+    container:
+      image: ros:humble
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: src/autoware_manual_control
+
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential cmake git python3-colcon-common-extensions \
+            ros-humble-rmw-cyclonedds-cpp ros-humble-test-msgs \
+            ros-humble-autoware-control-msgs ros-humble-autoware-vehicle-msgs \
+            ros-humble-autoware-adapi-v1-msgs ros-humble-zenoh-cpp-vendor \
+            nlohmann-json3-dev libyaml-dev
+
+      - name: Build (native_zenoh transport via colcon)
+        run: |
+          source /opt/ros/humble/setup.bash
+          export ZENOH_VENDOR_PREFIX=/opt/ros/humble/opt/zenoh_cpp_vendor
+          colcon build --packages-select autoware_manual_control \
+            --cmake-args -DTELEOP_AUTOWARE_TRANSPORT=native_zenoh -DTELEOP_WITH_ZENOH=ON
+        shell: bash
+
+      - name: Byte-perfect gate (test_cdr + test_param_reader)
+        run: |
+          source /opt/ros/humble/setup.bash
+          ctest --test-dir build/autoware_manual_control \
+            -R 'test_cdr|test_param_reader' --output-on-failure
+        shell: bash
+
+      - name: Golden-byte drift guard
+        run: |
+          source /opt/ros/humble/setup.bash
+          RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
+            python3 src/autoware_manual_control/test/capture_golden.py --check
+        shell: bash

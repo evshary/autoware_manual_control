@@ -1,0 +1,34 @@
+# Minimal ROS-free operator teleop for remote driving: builds keyboard_control on
+# the native_zenoh transport (vendored IDL, static Fast-CDR/libyaml) and ships it
+# on a plain Ubuntu base. The only runtime library is libzenohc, taken from the
+# zenoh_cpp_vendor package -- no ROS, no message packages, no colcon.
+FROM ros:humble AS zenoh_src
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-humble-zenoh-cpp-vendor \
+    && rm -rf /var/lib/apt/lists/*
+
+FROM ubuntu:22.04 AS builder
+COPY --from=zenoh_src /opt/ros/humble/opt/zenoh_cpp_vendor /opt/zenoh
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake git ca-certificates \
+    nlohmann-json3-dev libyaml-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /ws
+COPY . /ws/src
+RUN cmake -S /ws/src -B build \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DTELEOP_AUTOWARE_TRANSPORT=native_zenoh \
+      -DTELEOP_WITH_KEYBOARD=ON -DTELEOP_WITH_ZENOH=OFF \
+      -DBUILD_TESTING=OFF -DZENOH_VENDOR_PREFIX=/opt/zenoh \
+ && cmake --build build --target keyboard_control -j"$(nproc)"
+
+FROM ubuntu:22.04 AS runner
+COPY --from=zenoh_src /opt/ros/humble/opt/zenoh_cpp_vendor/lib /opt/zenoh/lib
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /ws/build/keyboard_control /opt/teleop/keyboard_control
+COPY config/teleop.example.yaml /opt/teleop/config/teleop.example.yaml
+ENV LD_LIBRARY_PATH=/opt/zenoh/lib
+WORKDIR /opt/teleop
+CMD ["sleep", "infinity"]

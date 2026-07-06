@@ -12,6 +12,10 @@ RUN apt-get update && apt-get install -y \
     git \
     python3-colcon-common-extensions \
     ros-humble-rmw-cyclonedds-cpp \
+    ros-humble-geographic-msgs \
+    ros-humble-zenoh-cpp-vendor \
+    libyaml-dev \
+    nlohmann-json3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Setup workspace

@@ -1,0 +1,14 @@
+# Operator-only stack for remote driving: just the minimal ROS-free teleop, which
+# connects over Zenoh (ZENOH_CONNECT) to a remote vehicle bridge or a cloud router.
+# No Autoware, no bridge, no visualizer -- those live on the vehicle side.
+name: autoware_manual_control_operator
+services:
+  teleop:
+    build:
+      context: .
+      dockerfile: Dockerfile.operator
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    stdin_open: true
+    tty: true
+    command: sleep infinity
