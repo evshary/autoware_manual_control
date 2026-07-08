@@ -37,6 +37,10 @@ Because the profile gates it, the plain `ros` transport never starts it; `--tran
 
 `run_teleop.sh` finds the compose project that has `teleop` running (preferring this local stack over a release stack when both are up), reads that project's `tmp/state.<project>.env`, and compiles the matching backend inside the container — `native_zenoh` for the Zenoh transport, `rclcpp` otherwise — before launching the local keyboard operator. Edit the source and re-run `run_teleop.sh` to recompile against the mounted checkout.
 
+The whole flow, from `up` to driving:
+
+<video controls preload="metadata" style="width: 100%" src="videos/teleop-local.mp4"></video>
+
 ## Inspecting and tearing down
 
 ```bash
