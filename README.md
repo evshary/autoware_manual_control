@@ -2,7 +2,7 @@
 
 A modular manual-driving node for [Autoware](https://github.com/autowarefoundation/autoware.universe): drop it into a ROS 2 workspace, drive an Autoware vehicle from the keyboard in minutes, and — when you are ready — drive it from your own UI over [Zenoh](https://zenoh.io/) instead, with no change to the control or mode logic.
 
-🎥 **[Watch the demo video](https://www.youtube.com/watch?v=Pyi3uyONG8A)**
+🎥 **[Watch the demo](book/src/videos/teleop-local.mp4)** — the containerized quickstart, keyboard-driving an Autoware planning-sim vehicle (more demos [in the book](https://autoware-manual-control.readthedocs.io)).
 
 ## Two independent axes
 

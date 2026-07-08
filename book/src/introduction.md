@@ -2,6 +2,10 @@
 
 Autoware Manual Control is a modular manual-driving node for [Autoware](https://github.com/autowarefoundation/autoware.universe). A human or a program supplies driving intent — throttle, brake, steer, gear, engage, mode — and the node turns it into the control, gear and operation-mode commands an Autoware vehicle expects, while feeding live telemetry back. It ships ready to drive from a keyboard, and it is built so the *same* control logic can be driven from a remote client over [Zenoh](https://zenoh.io/) and can talk to Autoware either over native ROS 2 or with no ROS at all.
 
+Here it is in motion — the containerized quickstart from [Running Locally](running-locally.md), driving the planning simulator from the keyboard:
+
+<video controls preload="metadata" style="width: 100%" src="videos/teleop-local.mp4"></video>
+
 The whole design rests on keeping two concerns apart.
 
 ## The two axes
@@ -46,6 +50,10 @@ Three cells are the ones worth naming:
 - **`keyboard_control` × `rclcpp`** — the getting-started demo. The default build; `ros2 run autoware_manual_control keyboard_control`.
 - **`zenoh_control` × `rclcpp`** — drive from your own client over Zenoh while the node integrates with Autoware over ROS. The everyday integration path: your UI publishes JSON intent, the node drives a normal ROS Autoware.
 - **`zenoh_control` × `native_zenoh`** — operator I/O over Zenoh *and* Autoware transport over Zenoh. No ROS on the operator side at all: suitable for [cross-machine remote driving](cross-machine.md) over the Internet.
+
+The `zenoh_control` rows in practice — any client that publishes the JSON intent can drive, here a web fleet console ([zenoh_autoware_fms](https://github.com/evshary/zenoh_autoware_fms)) spawning one teleop per vehicle:
+
+<video controls preload="metadata" style="width: 100%" src="videos/fleet-console.mp4"></video>
 
 ## The seam that makes this work
 

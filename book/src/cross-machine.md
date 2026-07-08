@@ -63,6 +63,10 @@ ZENOH_CONNECT=tcp/<vehicle-ip>:7447 ./run_containers.sh --operator up
 ./run_teleop.sh
 ```
 
+Exactly that, live — the vehicle host on the left, a ROS-free macOS operator dialing in on the right:
+
+<video controls preload="metadata" style="width: 100%" src="videos/teleop-remote.mp4"></video>
+
 If instead the **operator** is the one with the reachable address — a control centre the vehicles dial into — flip it: the operator listens and the vehicle bridge dials out.
 
 ```bash
